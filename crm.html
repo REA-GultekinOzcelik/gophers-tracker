@@ -160,6 +160,11 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
 .qa .lab{margin:0}
 .qnote{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:15px}
 .qbtns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.grid>*{min-width:0}
+.photobtn{background:var(--navy-soft);color:var(--navy);border-top:1px solid var(--line)}
+.filebtn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;width:max-content;margin-top:8px}
+.doclink{color:var(--navy);font-weight:600;word-break:break-word}
+pre.ocr{white-space:pre-wrap;font-size:12px;color:var(--mut);background:var(--paper);border-radius:8px;padding:8px;margin:6px 0 0;max-height:220px;overflow:auto}
 .ogsec{margin:4px 0 6px}
 .ogitem{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
 .ogitem .nm{font-weight:600;font-size:15px}
@@ -208,6 +213,7 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
         <p class="hint" id="qHint">Yazdıkça CRM'de arar.</p>
       </div>
       <button class="newbtn" id="newBtn" type="button">＋ <span id="newBtnTxt">Yeni kişi ekle</span></button>
+      <label class="newbtn photobtn" for="photoFile">📷 <span id="photoBtnTxt">Fotoğraftan kişi ekle</span><input type="file" id="photoFile" accept="image/*" hidden></label>
       <div class="list" id="results"></div>
     </section>
 
@@ -218,6 +224,7 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
         <div class="meta" id="fMeta">Görüşmeyi kaydetmek için soldan kişiyi seç ya da yeni kişi bilgilerini gir.</div>
         <div id="histBox"></div>
         <div id="ogBox"></div>
+        <div id="docBox"></div>
 
         <div class="row">
           <div class="f"><label for="n">Ad soyad</label><input id="n" required></div>

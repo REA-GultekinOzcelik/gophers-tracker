@@ -218,19 +218,19 @@ function clearForm(keepName){
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
-  $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("dupWarn").classList.add("hidden");
+  $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
   const c=S.contacts.get(key); if(!c) return;
-  S.sel=key; S.histAll=false; S.ogOpen=false;
+  S.sel=key; S.histAll=false; S.ogOpen=false; S.docOpen=false; S.pendingPhoto=null;
   setVal("n",c.name); setVal("t",c.t); setVal("rf",c.rf); setVal("em",c.em); setVal("tf",c.tf);
   setVal("no",""); setVal("na",""); setVal("nd",""); setVal("pb",""); setVal("ad",""); setVal("d",todayISO());
   S.ct=""; S.kt=c.kt||""; S.p=c.p||""; $("kN").checked=false;
   $("fTitle").textContent=c.name;
   $("fMeta").textContent=`${c.recs.length} kayıt · son görüşme ${c.lastDate?tr(c.lastDate):"—"}`;
   $("dupWarn").classList.add("hidden");
-  renderHist(); renderOg(); buildChips(); renderResults();
+  renderHist(); renderOg(); renderDocs(); buildChips(); renderResults();
   document.body.classList.add("editing");
   if(focusNote) setTimeout(()=>$("no").focus({preventScroll:true}),50);
 }
@@ -320,6 +320,7 @@ async function save(e){
     await addCrmRow(rec);
     const key=norm(n);
     toast("Kaydedildi");
+    if(S.pendingPhoto) afterSavePhoto(n);
     $("q").value=""; selectContact(key,false); setVal("no",""); setVal("na",""); setVal("nd","");
   }catch(err){
     console.error(err); if(err && err.code==="redirect") return;
@@ -680,6 +681,7 @@ function openMod(mod,id){
     $("sozTitle").textContent=d?`${d.A} · ${d.E||""}`:"Yeni sözleşme";
     $("sozMeta").textContent=d?[d.D,d.AK,d.R?("Karşı taraf: "+d.R):""].filter(Boolean).join(" · "):"İşlem türünü seç; kira seçilince kefil, bitiş ve kira artışı alanları açılır.";
     applyKiraVis(); showCalc();
+    $("sozExtra").innerHTML=sozDocHtml(d);
   } else if(mod==="kira"){
     $("kiraTitle").textContent=d?d.A:"Yeni kiralık mülk";
     $("kiraMeta").textContent=d?[d.T,d.D?("Mal sahibi: "+d.D):""].filter(Boolean).join(" · "):"Mülk bilgilerini gir; varsa kira sözleşmesine bağla.";
@@ -959,6 +961,165 @@ function ogRow(o){
   </div>`;
 }
 
+// ================= Dokümanlar (files → OneDrive) & Fotoğraftan kişi (OCR) =================
+// Files go to OneDrive: Gophers CRM/Dokümanlar/Kişiler/<ad> or Gophers CRM/Dokümanlar/Sözleşmeler/<ID portföy>
+const CRM_FOLDER_ID = "01HMEMOXXXL3AP2YVEZ5ALRH7V52RZSG3K";
+const safeName = s => String(s||"").replace(/[\\/:*?"<>|#%]/g," ").replace(/\s+/g," ").trim().replace(/^\.+|\.+$/g,"").slice(0,80) || "Adsız";
+const encPath = segs => segs.map(encodeURIComponent).join("/");
+function docPath(kind,label){ return ["Dokümanlar", kind==="soz"?"Sözleşmeler":"Kişiler", safeName(label)]; }
+async function ensureFolder(segs){
+  let parent=CRM_FOLDER_ID, item=null;
+  for(const seg of segs){
+    try{ item=await graph(`/drives/${DRIVE_ID}/items/${parent}:/${encodeURIComponent(seg)}?$select=id,webUrl,folder`); }
+    catch(e){
+      if(!(e && e.code==="http_404")) throw e;
+      try{ item=await graph(`/drives/${DRIVE_ID}/items/${parent}/children`,{method:"POST",body:{name:seg, folder:{}, "@microsoft.graph.conflictBehavior":"fail"}}); }
+      catch(e2){ if(e2 && e2.code==="http_409") item=await graph(`/drives/${DRIVE_ID}/items/${parent}:/${encodeURIComponent(seg)}?$select=id,webUrl,folder`); else throw e2; }
+    }
+    parent=item.id;
+  }
+  return item;
+}
+async function listDocs(segs){
+  try{ const r=await graph(`/drives/${DRIVE_ID}/items/${CRM_FOLDER_ID}:/${encPath(segs)}:/children?$select=name,webUrl,size,lastModifiedDateTime,file&$orderby=lastModifiedDateTime desc&$top=50`); return (r.value||[]).filter(x=>x.file); }
+  catch(e){ if(e && e.code==="http_404") return []; throw e; }
+}
+async function uploadFile(folderId, file, nameOverride){
+  const name=safeName(nameOverride||file.name).slice(0,120);
+  const tok=await token();
+  if(file.size <= 3.5*1024*1024){
+    const res=await fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${folderId}:/${encodeURIComponent(name)}:/content?@microsoft.graph.conflictBehavior=rename`,{method:"PUT",headers:{"Authorization":"Bearer "+tok,"Content-Type":file.type||"application/octet-stream"},body:file});
+    if(!res.ok){ let m=""; try{ m=(await res.json()).error.message; }catch(_){} throw {code:"http_"+res.status, message:m}; }
+    return res.json();
+  }
+  const ses=await graph(`/drives/${DRIVE_ID}/items/${folderId}:/${encodeURIComponent(name)}:/createUploadSession`,{method:"POST",body:{item:{"@microsoft.graph.conflictBehavior":"rename"}}});
+  const CH=5*1024*1024; let last=null;          // multiple of 320 KiB
+  for(let off=0; off<file.size; off+=CH){
+    const end=Math.min(off+CH,file.size);
+    const res=await fetch(ses.uploadUrl,{method:"PUT",headers:{"Content-Range":`bytes ${off}-${end-1}/${file.size}`},body:file.slice(off,end)});
+    if(!res.ok && res.status!==202){ throw {code:"http_"+res.status, message:"yükleme kesildi"}; }
+    last=res;
+  }
+  return last.json();
+}
+function fmtSize(n){ return n>1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(n/1024))+" KB"; }
+// contact documents panel (Kayıt form)
+async function renderDocs(){
+  const box=$("docBox"); if(!box) return;
+  const c=S.contacts.get(S.sel);
+  if(!c){ box.innerHTML=""; return; }
+  const key=c.key;
+  box.innerHTML=`<details class="sec docsec"${S.docOpen?" open":""}><summary>Dokümanlar<span class="cnt" id="docCnt"></span></summary>
+    <div id="docList"><p class="hint">Okunuyor…</p></div>
+    <label class="act ok filebtn">📎 Doküman ekle<input type="file" id="docFile" multiple hidden></label>
+    <p class="hint">Dosya OneDrive'da "Gophers CRM › Dokümanlar › Kişiler › ${esc(safeName(c.name))}" klasörüne kaydedilir.</p></details>`;
+  try{
+    const docs=await listDocs(docPath("kisi",c.name));
+    if(S.sel!==key) return;
+    $("docCnt").textContent=docs.length?" · "+docs.length:"";
+    $("docList").innerHTML=docs.map(d=>`<div class="ogitem"><div><a class="doclink" href="${esc(d.webUrl)}" target="_blank" rel="noopener">${esc(d.name)}</a><div class="sub">${fmtSize(d.size)} · ${tr(String(d.lastModifiedDateTime).slice(0,10))}</div></div></div>`).join("") || `<p class="hint">Henüz doküman yok.</p>`;
+  }catch(e){ console.error(e); if($("docList")) $("docList").innerHTML=`<p class="hint">Dokümanlar okunamadı.</p>`; }
+}
+async function uploadDocs(files, kind, label, onDone){
+  if(!files || !files.length) return;
+  banner(""); toast(files.length>1?`${files.length} dosya yükleniyor…`:"Yükleniyor…");
+  try{
+    const folder=await ensureFolder(docPath(kind,label));
+    let i=0; for(const f of files){ i++; if(files.length>1) toast(`Yükleniyor ${i}/${files.length}: ${f.name}`); await uploadFile(folder.id,f); }
+    toast(files.length>1?`${files.length} dosya OneDrive'a eklendi`:"Doküman OneDrive'a eklendi");
+    if(onDone) onDone(folder);
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Doküman yüklenemedi")); }
+}
+function wireDocs(){
+  $("docBox").addEventListener("toggle",e=>{ if(e.target.matches(".docsec")) S.docOpen=e.target.open; },true);
+  $("docBox").addEventListener("change",e=>{
+    if(e.target.id!=="docFile") return;
+    const c=S.contacts.get(S.sel); if(!c) return;
+    const files=[...e.target.files]; e.target.value="";
+    S.docOpen=true; uploadDocs(files,"kisi",c.name,()=>renderDocs());
+  });
+  // contract documents (Sözleşme form): upload + fill the "Cloud Belge Linki" field
+  $("sozForm").addEventListener("change",e=>{
+    if(e.target.id!=="sozDocFile") return;
+    const d=S.soz.find(x=>x._id===S.modSel.soz); if(!d) return;
+    const files=[...e.target.files]; e.target.value="";
+    uploadDocs(files,"soz",`${d.A} ${d.E||""}`,folder=>{
+      if(!$("soz_AL").value.trim() && folder.webUrl){ $("soz_AL").value=folder.webUrl; updCounts("soz"); banner('Belge klasörünün linki "📎 Cloud Belge Linki" alanına yazıldı. Kalıcı olması için Kaydet\'e bas.'); }
+    });
+  });
+}
+function sozDocHtml(d){
+  return d ? `<div class="linkcard">📎 Sözleşme belgelerini (imzalı sözleşme, tapu, kimlik…) OneDrive'a ekle.<br><label class="linkbtn filebtn">Belge ekle ›<input type="file" id="sozDocFile" multiple hidden></label>${isURL(d.AL)?` · <a class="linkbtn" href="${esc(d.AL)}" target="_blank" rel="noopener">Klasörü aç ›</a>`:""}</div>` : "";
+}
+const isURL = v => /^https?:\/\//i.test(String(v||""));
+
+// ---------- Fotoğraftan kişi (kartvizit, WhatsApp profili, e-posta imzası …) ----------
+const TESS_URL="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+function loadScript(src){ return new Promise((ok,no)=>{ if(window.Tesseract) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>no({code:"script", message:"OCR kütüphanesi yüklenemedi"}); document.head.appendChild(s); }); }
+async function shrink(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=no; i.src=url; });
+    const k=Math.min(1,2000/Math.max(img.width,img.height));
+    const cv=document.createElement("canvas"); cv.width=Math.round(img.width*k); cv.height=Math.round(img.height*k);
+    const g=cv.getContext("2d"); g.filter="grayscale(1) contrast(1.25)"; g.drawImage(img,0,0,cv.width,cv.height);
+    return cv;
+  } finally { URL.revokeObjectURL(url); }
+}
+const ORG_RE=/(?<![\p{L}])(a\.?\s?ş\.?|ltd|şti|sti|inc|llc|corp|gmbh|holding|grup|group|emlak|gayrimenkul|realty|real estate|keller|williams|remax|re\/max|century|coldwell|inşaat|insaat|yapı|yapi|danışmanlık|consulting|bank|banka|hukuk|law|ofis|office)(?![\p{L}])/iu;
+const TITLE_RE=/(?<![\p{L}])(müdür|mudur|müdürü|danışman|danışmanı|danisman|uzman|uzmanı|direktör|direktörü|direktor|başkan|başkanı|baskan|yönetici|yönetici|yonetici|kurucu|ortak|avukat|mimar|mühendis|muhendis|manager|director|ceo|cfo|coo|founder|partner|agent|broker|realtor|consultant|specialist|associate|owner|sales|satış|satis)(?![\p{L}])/iu;
+function parseCard(text){
+  const lines=text.split(/\n/).map(l=>l.replace(/[|_~`»«•·]+/g," ").replace(/\s+/g," ").trim()).filter(l=>l.length>1);
+  const all=lines.join(" \n ");
+  const emails=[...new Set((all.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)||[]).map(e=>e.toLowerCase()))];
+  const phones=[]; for(const m of all.matchAll(/(\+?\(?\d[\d\s().\-]{8,}\d)/g)){
+    let d=m[1].replace(/\D/g,"");
+    if(d.length===10 && /^[2-5]/.test(d)) d="90"+d; else if(d.length===10) d="1"+d; else if(d.length===11 && d[0]==="0") d="9"+d;
+    if(d.length<11 || d.length>13) continue;
+    const pretty = d.startsWith("90")&&d.length===12 ? `+90 ${d.slice(2,5)} ${d.slice(5,8)} ${d.slice(8,10)} ${d.slice(10)}` : (d.startsWith("1")&&d.length===11 ? `+1 ${d.slice(1,4)} ${d.slice(4,7)} ${d.slice(7)}` : "+"+d);
+    if(!phones.some(p=>p.d===d)) phones.push({d,pretty,mobile:/^905/.test(d)||/^1/.test(d)});
+  }
+  phones.sort((a,b)=>(b.mobile?1:0)-(a.mobile?1:0));
+  let name="", org="", title="";
+  for(const l of lines){
+    if(/@|www\.|https?:|\d{3}/i.test(l)) continue;
+    if(!org && ORG_RE.test(l)){ org=l; continue; }
+    if(!title && TITLE_RE.test(l) && l.split(" ").length<=6){ title=l; continue; }
+    const w=l.split(" ").filter(Boolean);
+    if(!name && w.length>=2 && w.length<=4 && w.every(x=>/^[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü'.-]+$/.test(x) || /^[A-ZÇĞİÖŞÜ'.-]{2,}$/.test(x))) name=w.map(x=>x.length>2&&x===x.toLocaleUpperCase("tr")?x[0]+x.slice(1).toLocaleLowerCase("tr"):x).join(" ");
+  }
+  return {name, phone:phones[0]?phones[0].pretty:"", phone2:phones[1]?phones[1].pretty:"", email:emails[0]||"", org, title, raw:lines.join("\n")};
+}
+async function photoContact(file){
+  if(!file) return;
+  banner("");
+  const lbl=$("photoBtnTxt"), old=lbl.textContent;
+  try{
+    lbl.textContent="Fotoğraf okunuyor…";
+    await loadScript(TESS_URL);
+    const cv=await shrink(file);
+    const worker=await Tesseract.createWorker(["tur","eng"],1,{logger:m=>{ if(m.status==="recognizing text") lbl.textContent=`Okunuyor %${Math.round(m.progress*100)}`; else if(/load|download/i.test(m.status)) lbl.textContent="İlk kullanım: dil paketi indiriliyor…"; }});
+    const {data}=await worker.recognize(cv); await worker.terminate();
+    const p=parseCard(data.text||"");
+    clearForm(p.name); S.pendingPhoto=file;
+    setVal("t",p.phone); setVal("em",p.email); setVal("rf",[p.org,p.title].filter(Boolean).join(" · "));
+    S.kt=""; buildChips();
+    $("fTitle").textContent=p.name||"Fotoğraftan yeni kişi";
+    $("fMeta").innerHTML=`Fotoğraftan okundu; bilgileri kontrol et, görüşme notunu yaz ve kaydet.${p.phone2?` İkinci telefon: <b>${esc(p.phone2)}</b>.`:""} <label class="keep" style="margin-top:6px"><input type="checkbox" id="photoKeep" checked> Fotoğrafı kişinin dokümanlarına ekle</label><details class="extra"><summary>Okunan metin</summary><pre class="ocr">${esc(p.raw)||"(metin bulunamadı)"}</pre></details>`;
+    document.body.classList.add("editing"); checkDup();
+    setTimeout(()=>$(p.name?"no":"n").focus({preventScroll:true}),50);
+    if(!p.name && !p.phone && !p.email) banner("Fotoğrafta isim, telefon ya da e-posta bulunamadı. Daha net, düz çekilmiş bir fotoğraf dene ya da bilgileri elle gir.");
+  }catch(e){ console.error(e); S.pendingPhoto=null; banner(errMsg(e,"Fotoğraf okunamadı")); }
+  finally{ lbl.textContent=old; }
+}
+// after a successful save of a photo-created contact, keep the photo in the contact's documents
+function afterSavePhoto(name){
+  const f=S.pendingPhoto; S.pendingPhoto=null;
+  const keep=$("photoKeep"); if(!f || (keep && !keep.checked)) return;
+  const ext=(f.name.match(/\.[a-z0-9]+$/i)||[".jpg"])[0];
+  ensureFolder(docPath("kisi",name)).then(folder=>uploadFile(folder.id,f,"Kartvizit "+todayISO()+ext)).then(()=>{ toast("Fotoğraf dokümanlara eklendi"); renderDocs(); }).catch(e=>{ console.error(e); banner(errMsg(e,"Fotoğraf dokümanlara eklenemedi")); });
+}
+
 function showView(v){
   const map={k:"viewKayit",b:"viewBugun",s:"viewSoz",r:"viewKira",p:"viewFirsat"}, tabs={k:"tabKayit",b:"tabBugun",s:"tabSoz",r:"tabKira",p:"tabFirsat"};
   for(const [key,id] of Object.entries(map)){ $(id).classList.toggle("hidden",key!==v); $(tabs[key]).setAttribute("aria-selected",key===v); }
@@ -981,7 +1142,8 @@ function wire(){
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
   $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) selectContact(b.dataset.k); });
-  wireOg();
+  wireOg(); wireDocs();
+  $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
   $("histBox").addEventListener("click",e=>{
     const w=e.target.closest(".delwrap");
     if(w){
