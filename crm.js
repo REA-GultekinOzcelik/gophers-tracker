@@ -207,6 +207,33 @@ function renderResults(){
       <div class="nm">${esc(c.name)}${c.p?`<span class="${potCls(c.p)}">${esc(c.p)}</span>`:""}</div>
       <div class="sub">${esc([c.rf, c.t, c.lastDate?tr(c.lastDate):""].filter(Boolean).join("  ·  "))}</div>
     </button>`).join("") || (S.rows.length?"":`<div class="empty">Kayıtlar yükleniyor…</div>`);
+  // not (or not only) in CRM: look in the phone contacts exported to the Rehber folder
+  const hits=q.trim().length>=2 ? rehberSearch(q) : [];
+  if(hits.length){
+    $("results").insertAdjacentHTML("beforeend", `<div class="rehh">📇 Telefon rehberinde · ${hits.length}${hits.length>=8?"+":""}</div>` + hits.map(l=>`
+    <button type="button" class="person rehp" data-lead="${esc(l.id)}">
+      <div class="nm">${esc(l.name)}<span class="pot pot-Low">Rehber</span></div>
+      <div class="sub">${esc([l.phone1, l.email, l.org].filter(Boolean).join("  ·  "))}</div>
+    </button>`).join(""));
+    if(!res.length) $("qHint").textContent="CRM'de yok · telefon rehberinde bulundu. Seçince bilgileri forma gelir.";
+  }
+}
+// phone-contacts search (all Rehber entries not already in CRM by phone)
+function rehberSearch(q){
+  const leads=S.leads||[]; if(!leads.length) return [];
+  const nq=norm(q), dq=digits(q), toks=nq.split(" ").filter(Boolean);
+  const used=new Set([...S.contacts.values()].map(c=>c.pk).filter(Boolean));
+  const out=[];
+  for(const l of leads){
+    const pk=phoneKey(l.phone1||l.phone2||l.phone3||""); if(pk && used.has(pk)) continue;
+    const ok=(dq.length>=4 && digits([l.phone1,l.phone2,l.phone3].join(" ")).includes(dq)) || (toks.length && toks.every(t=>norm(l.name+" "+(l.org||"")+" "+(l.email||"")).includes(t)));
+    if(ok){ out.push(l); if(out.length>=8) break; }
+  }
+  return out;
+}
+function rehberByPhone(v){
+  const pk=phoneKey(v); if(!pk) return null;
+  return (S.leads||[]).find(l=>[l.phone1,l.phone2,l.phone3].some(p=>phoneKey(p)===pk)) || null;
 }
 
 // ---------- form ----------
@@ -251,7 +278,9 @@ function checkDup(){
   const pk=phoneKey($("t").value);
   if(!pk){ w.classList.add("hidden"); return; }
   const hit=[...S.contacts.values()].find(c=>c.pk===pk && c.key!==S.sel);
-  if(hit){ w.innerHTML=`Bu telefon <b>${esc(hit.name)}</b> adına kayıtlı.<button type="button" data-k="${esc(hit.key)}">O kişiyi aç</button>`; w.classList.remove("hidden"); }
+  if(hit){ w.innerHTML=`Bu telefon <b>${esc(hit.name)}</b> adına kayıtlı.<button type="button" data-k="${esc(hit.key)}">O kişiyi aç</button>`; w.classList.remove("hidden"); return; }
+  const l=!S.sel && rehberByPhone($("t").value);
+  if(l && (norm(l.name)!==norm($("n").value) || (!$("em").value && l.email))){ w.innerHTML=`Telefon rehberinde: <b>${esc(l.name)}</b>${l.email?" · "+esc(l.email):""}.<button type="button" data-fill="${esc(l.id)}">Bilgileri getir</button>`; w.classList.remove("hidden"); }
   else w.classList.add("hidden");
 }
 
@@ -1136,12 +1165,28 @@ function wire(){
   setVal("d",todayISO());
   $("q").addEventListener("input",renderResults);
   $("q").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const first=$("results").querySelector(".person"); if(first) selectContact(first.dataset.k); } });
-  $("results").addEventListener("click",e=>{ const b=e.target.closest(".person"); if(b) selectContact(b.dataset.k); });
+  $("results").addEventListener("click",e=>{ const b=e.target.closest(".person"); if(!b) return; if(b.dataset.lead){ openLead(b.dataset.lead); return; } selectContact(b.dataset.k); });
   $("newBtn").addEventListener("click",()=>{ const q=$("q").value.trim(); clearForm(/\d{4,}/.test(q)?"":q); if(/\d{4,}/.test(q)) setVal("t",q); document.body.classList.add("editing"); $(q && !/\d{4,}/.test(q)?"t":"n").focus(); });
   $("backBtn").addEventListener("click",()=>document.body.classList.remove("editing"));
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
-  $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) selectContact(b.dataset.k); });
+  $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
+    if(b.dataset.fill){ const l=(S.leads||[]).find(x=>x.id===b.dataset.fill); if(!l) return; setVal("n",l.name); if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · ")); $("fTitle").textContent=l.name; $("dupWarn").classList.add("hidden"); toast("Rehberden dolduruldu"); return; }
+    selectContact(b.dataset.k); });
+  // Android Chrome: pick straight from the phone's contacts (Contact Picker API); iPhone uses the Rehber export
+  if("contacts" in navigator && "ContactsManager" in window){
+    $("pickBtn").hidden=false;
+    $("pickBtn").addEventListener("click",async()=>{
+      try{
+        const [c]=await navigator.contacts.select(["name","tel","email"],{multiple:false}); if(!c) return;
+        const name=(c.name&&c.name[0])||"", tel=(c.tel&&c.tel[0])||"", em=(c.email&&c.email[0])||"";
+        const hit=[...S.contacts.values()].find(x=>x.pk && x.pk===phoneKey(tel)) || S.contacts.get(norm(name));
+        if(hit){ selectContact(hit.key); toast("Bu kişi CRM'de kayıtlı"); return; }
+        clearForm(name); setVal("t",tel); setVal("em",em); $("fTitle").textContent=name||"Yeni kişi"; $("fMeta").textContent="Telefon rehberinden geldi · görüşme notunu yazıp kaydet.";
+        document.body.classList.add("editing"); checkDup(); setTimeout(()=>$("no").focus({preventScroll:true}),50);
+      }catch(e){ console.error(e); }
+    });
+  }
   wireOg(); wireDocs();
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
   $("histBox").addEventListener("click",e=>{
@@ -1212,6 +1257,7 @@ async function boot(){
   if(qs.get("tab")) tab=qs.get("tab");
   showView(["k","b","s","r","p"].includes(tab)?tab:"k");
   await refresh(false);
+  if(!S.leadsAt){ S.leadsAt=Date.now(); loadLeads(false).then(()=>{ if($("q").value) renderResults(); }); }
   const c=qs.get("c"); if(c){ const key=norm(c); if(S.contacts.has(key)){ showView("k"); selectContact(key); } else { showView("k"); $("q").value=c; renderResults(); } history.replaceState(null,"",location.pathname); }
   document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && Date.now()-(S.lastRefresh||0)>60000){ const busy=document.activeElement && ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName); if(!busy) refresh(false); } });
 }
