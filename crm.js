@@ -226,10 +226,9 @@ function renderResults(){
 function rehberSearch(q){
   const leads=S.leads||[]; if(!leads.length) return [];
   const nq=norm(q), dq=digits(q), toks=nq.split(" ").filter(Boolean);
-  const used=new Set([...S.contacts.values()].map(c=>c.pk).filter(Boolean));
   const out=[];
   for(const l of leads){
-    const pk=phoneKey(l.phone1||l.phone2||l.phone3||""); if(pk && used.has(pk)) continue;
+    if(S.contacts.has(norm(l.name))) continue;            // already in CRM under the same name
     const ok=(dq.length>=4 && digits([l.phone1,l.phone2,l.phone3].join(" ")).includes(dq)) || (toks.length && toks.every(t=>norm(l.name+" "+(l.org||"")+" "+(l.email||"")).includes(t)));
     if(ok){ out.push(l); if(out.length>=8) break; }
   }
@@ -558,9 +557,10 @@ async function loadLeads(force){
   const used=new Set(); const out=[]; let seq=0;
   for(const f of Object.values(cache.files).sort((a,b)=>String(a.at).localeCompare(String(b.at)))){
     for(const [name,phones,email,org,title] of f.cards){
-      const pks=phones.map(phoneKey).filter(Boolean);
-      if(pks.length && pks.some(pk=>used.has(pk))) continue;
-      pks.forEach(pk=>used.add(pk));
+      // drop only true duplicates (same name and phone); shared office numbers must not hide people
+      const sig=norm(name)+"|"+(phones.map(phoneKey).filter(Boolean)[0]||"");
+      if(used.has(sig)) continue;
+      used.add(sig);
       seq++;
       out.push({id:"lead_"+seq, seq, name, phone1:phones[0]||"", phone2:phones[1]||"", phone3:phones[2]||"", email:email||"", org:org||"", title:title||"", isForeign:isForeignPhone(phones[0]||""), noPhone:!phones.length});
     }
