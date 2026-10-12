@@ -566,6 +566,7 @@ async function loadLeads(force){
     }
   }
   S.leads=out; S.leadsState = out.length ? "ready" : (S.leadsErr ? "error" : "empty");
+  if(S.contacts.size) syncLbl();
   if($("q").value) renderResults();
   if($("n").value && !S.sel) rehberSuggest();
   if(lbl) lbl.textContent=out.length ? `Rehber: ${leadPool().length} aday` : "";
@@ -1262,7 +1263,8 @@ function wire(){
 }
 
 
-function syncLbl(){ const at=new Date(); $("syncLbl").textContent=`${S.contacts.size} kişi · ${S.rows.length} kayıt · Excel ${pad(at.getHours())}:${pad(at.getMinutes())}`; }
+function syncLbl(){ const at=new Date(); const rb = S.leadsState==="ready" ? ` · Rehber ${(S.leads||[]).length.toLocaleString("tr-TR")}` : S.leadsState==="loading" ? " · Rehber yükleniyor" : S.leadsState==="error" ? " · Rehber okunamadı" : ""; $("syncLbl").textContent=`${S.contacts.size} kişi · ${S.rows.length} kayıt${rb} · Excel ${pad(at.getHours())}:${pad(at.getMinutes())}`; $("syncLbl").title="Sürüm "+APP_V; }
+const APP_V = (document.querySelector('script[src*="crm.js"]')||{src:""}).src.split("v=")[1] || "?";
 async function refresh(manual){
   $("syncLbl").textContent="Excel okunuyor…";
   try{
