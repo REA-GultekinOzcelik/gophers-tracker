@@ -216,6 +216,8 @@ function renderResults(){
       <div class="sub">${esc([l.phone1, l.email, l.org].filter(Boolean).join("  ·  "))}</div>
     </button>`).join(""));
     if(!res.length) $("qHint").textContent="CRM'de yok · telefon rehberinde bulundu. Seçince bilgileri forma gelir.";
+  } else if(q.trim().length>=2 && S.leadsState==="ready" && !res.length){
+    $("qHint").textContent = `CRM'de ve telefon rehberinde yok (${rehberInfo()}). Yeni kişi olarak ekleyebilirsin.`;
   } else if(q.trim().length>=2 && S.leadsState!=="ready"){
     $("qHint").textContent += S.leadsState==="loading" ? " · Telefon rehberi yükleniyor…" : S.leadsState==="error" ? " · Telefon rehberi okunamadı ("+S.leadsErr+")" : " · Telefon rehberi boş";
   }
@@ -239,6 +241,7 @@ function rehberSuggest(){
   if(S.sel || n.length<3){ box.innerHTML=""; box.hidden=true; return; }
   if(S.contacts.has(norm(n))){ box.innerHTML=""; box.hidden=true; return; }
   const hits=rehberSearch(n).slice(0,5);
+  if(!hits.length && S.leadsState==="ready"){ box.hidden=false; box.innerHTML=`<p class="hint">📇 Telefon rehberinde bulunamadı (${esc(rehberInfo())}).</p>`; return; }
   if(!hits.length){ box.hidden=S.leadsState==="ready"; box.innerHTML=S.leadsState==="loading"?`<p class="hint">Telefon rehberi yükleniyor…</p>`:S.leadsState==="error"?`<p class="hint">Telefon rehberi okunamadı (${esc(S.leadsErr)}).</p>`:""; return; }
   box.hidden=false;
   box.innerHTML=`<div class="rehh">📇 Telefon rehberinde</div>`+hits.map(l=>`<button type="button" class="person rehp" data-fill="${esc(l.id)}"><div class="nm">${esc(l.name)}</div><div class="sub">${esc([l.phone1,l.email,l.org].filter(Boolean).join("  ·  "))}</div></button>`).join("");
@@ -249,6 +252,10 @@ function fillFromLead(id){
   if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · "));
   $("fTitle").textContent=l.name; $("rehSug").innerHTML=""; $("rehSug").hidden=true; checkDup(); toast("Rehberden dolduruldu");
   setTimeout(()=>$("no").focus({preventScroll:true}),50);
+}
+function rehberInfo(){
+  const n=(S.leads||[]).length, last=(S.leadFiles||[]).slice(-1)[0];
+  return `rehber kopyası: ${last?tr(String(last.at).slice(0,10)):"?"}, ${n.toLocaleString("tr-TR")} kişi`;
 }
 function rehberByPhone(v){
   const pk=phoneKey(v); if(!pk) return null;
@@ -546,6 +553,7 @@ async function loadLeads(force){
     cache=next;
     try{ localStorage.setItem("gc_leads", JSON.stringify(cache)); }catch(_){}
   }catch(e){ console.error(e); if(e && e.code==="redirect") return; S.leadsErr=(e&&(e.message||e.code))||"bilinmeyen hata"; }
+  S.leadFiles=Object.values(cache.files).map(f=>({name:f.name, at:f.at})).sort((a,b)=>String(a.at).localeCompare(String(b.at)));
   // build the lead list: one entry per phone, first file wins
   const used=new Set(); const out=[]; let seq=0;
   for(const f of Object.values(cache.files).sort((a,b)=>String(a.at).localeCompare(String(b.at)))){
