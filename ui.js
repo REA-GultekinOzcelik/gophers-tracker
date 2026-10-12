@@ -273,10 +273,47 @@ async function loadCrm(force){
     S.crmList = new Map(res.a.concat(res.b).map(x => [x.name, x]));
     crmAt = Date.now(); S.crmDue = res.a.length;
     $("crmSub").textContent = `${res.a.length} kişi bugün ya da son 7 günde · ${res.b.length} birikmiş · ${hm(new Date())}`;
-    $("crmList").innerHTML = (res.a.length ? res.a.map(crmRow).join("") : `<div class="empty">Bugün için CRM aksiyonu yok.</div>`)
+    const ogs = await loadOgDays(base).catch(e => { console.error(e); return []; });
+    $("crmList").innerHTML = (ogs.length ? `<div class="crmh">Önemli günler · önümüzdeki 3 gün</div>` + ogs.map(ogRowT).join("") : "")
+      + (res.a.length ? res.a.map(crmRow).join("") : `<div class="empty">Bugün için CRM aksiyonu yok.</div>`)
       + (res.b.length ? `<div class="crmh">Öncelikli birikmiş · ilk 5 / ${res.b.length}</div>` + res.b.slice(0,5).map(crmRow).join("") : "");
     renderT();
   }catch(err){ console.error(err); $("crmSub").textContent = "Okunamadı"; $("crmList").innerHTML = `<div class="empty">CRM okunamadı. "Yenile"ye bas.</div>`; }
+}
+
+// special days (birthdays, home-purchase anniversaries): OzelGunler table + buyers' deed dates from the contracts sheet
+const OG_ICON = {"Doğum günü":"🎂","Ev alış yıldönümü":"🏠","Evlilik yıldönümü":"💍"};
+function ogParseT(v){
+  if(typeof v === "number" && v > 2000){ const iso = fromSerial(Math.floor(v)); const [y,m,d] = iso.split("-").map(Number); return {d,m,y}; }
+  const t = String(v||"").trim().replace(/^'/,""); let x;
+  if((x = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return {d:+x[3], m:+x[2], y:+x[1]};
+  if((x = t.match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?$/))) return {d:+x[1], m:+x[2], y:x[3] ? +x[3] : 0};
+  return null;
+}
+function ogNextT(p){
+  const td = today(); let y = Number(td.slice(0,4));
+  const mk = yy => { const leap = (yy%4===0 && yy%100!==0) || yy%400===0; const d = (p.m===2 && p.d===29 && !leap) ? 28 : p.d; return yy+"-"+pad2(p.m)+"-"+pad2(d); };
+  let iso = mk(y); if(iso < td){ y++; iso = mk(y); }
+  return {iso, dd: Math.round((parseISO(iso) - parseISO(td)) / 864e5), years: p.y ? y - p.y : 0};
+}
+async function loadOgDays(base){
+  const out = [];
+  try{
+    const r = await graph(`${base}/tables('OzelGunler')/range?$select=values`);
+    const h = r.values[0].map(x => String(x).trim()), ix = k => h.indexOf(k);
+    r.values.slice(1).forEach(c => { const p = ogParseT(c[ix("Date")]); const n = String(c[ix("Contact name")] ?? "").trim(); if(p && n) out.push({n, t:String(c[ix("Telephone")] ?? "").replace(/^'/,""), type:String(c[ix("Occasion")] ?? ""), p, note:String(c[ix("Note")] ?? "")}); });
+  }catch(e){ if(!(e && e.code === "http_404")) throw e; }
+  try{
+    const r = await graph(`${base}/worksheets('${encodeURIComponent("📋 Sözleşme Veritabanı")}')/range(address='D5:AK600')?$select=values`);
+    const KIRA = ["KİRA","VİLLA KİRA","ARSA/ARAZİ KİRA","TİCARİ KİRA","ENDÜSTRİYEL KİRA","DEVİR"];
+    r.values.forEach(c => { const type = String(c[0]||""), buyer = String(c[14]||"").trim(), st = String(c[33]||""); if(!type || !buyer || KIRA.includes(type) || st.includes("İptal")) return; const p = ogParseT(c[30]); if(p) out.push({n:buyer, t:String(c[15]||""), type:"Ev alış yıldönümü", p, note:String(c[1]||"")}); });
+  }catch(e){ console.error(e); }
+  return out.map(o => ({...o, nx:ogNextT(o.p)})).filter(o => o.nx.dd >= 0 && o.nx.dd <= 3).sort((a,b) => a.nx.dd - b.nx.dd);
+}
+function ogRowT(o){
+  const wa = waNum(o.t), yrs = o.nx.years, extra = yrs > 0 ? (o.type === "Doğum günü" ? ` · ${yrs}. yaş` : ` · ${yrs}. yıl`) : "";
+  const lbl = o.nx.dd === 0 ? ["Bugün","now"] : [o.nx.dd === 1 ? "Yarın" : o.nx.dd+" gün sonra", "soon"];
+  return `<div class="call" data-crm="${esc(o.n)}" role="link" tabindex="0" style="cursor:pointer"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(o.n)}</div><div class="m">${esc((OG_ICON[o.type]||"📌")+" "+o.type+extra+(o.note ? " · "+o.note : ""))}</div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;
 }
 
 // quick actions on the CRM card: log "Arandı" (optional next date) or set Keep = N, as a new row in the CRM table

@@ -160,6 +160,12 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
 .qa .lab{margin:0}
 .qnote{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:15px}
 .qbtns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ogsec{margin:4px 0 6px}
+.ogitem{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.ogitem .nm{font-weight:600;font-size:15px}
+.ogitem .sub{font-size:13px;color:var(--mut)}
+.ogadd{display:grid;gap:4px;margin-top:10px}
+.ogadd .otherin{width:100%;margin-top:6px}
 .qbtns .ask{font-size:13px;font-weight:600;color:var(--red)}
 .sync .btns{display:inline-flex;gap:6px;align-items:center}
 .sync .btns button{margin-left:0}
@@ -211,6 +217,7 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
         <h2 id="fTitle">Yeni kişi</h2>
         <div class="meta" id="fMeta">Görüşmeyi kaydetmek için soldan kişiyi seç ya da yeni kişi bilgilerini gir.</div>
         <div id="histBox"></div>
+        <div id="ogBox"></div>
 
         <div class="row">
           <div class="f"><label for="n">Ad soyad</label><input id="n" required></div>

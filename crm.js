@@ -104,8 +104,8 @@ async function loadMod(mod){
   });
   S[mod] = out;
 }
-function saveCache(){ try{ localStorage.setItem("gc_cache", JSON.stringify({rows:S.rows, soz:S.soz, kira:S.kira, firsat:S.firsat, at:Date.now()})); }catch(_){} }
-function loadCache(){ try{ const c = JSON.parse(localStorage.getItem("gc_cache") || "null"); if(!c) return false; S.rows=c.rows||[]; S.soz=c.soz||[]; S.kira=c.kira||[]; S.firsat=c.firsat||[]; return true; }catch(_){ return false; } }
+function saveCache(){ try{ localStorage.setItem("gc_cache", JSON.stringify({rows:S.rows, soz:S.soz, kira:S.kira, firsat:S.firsat, og:S.og, at:Date.now()})); }catch(_){} }
+function loadCache(){ try{ const c = JSON.parse(localStorage.getItem("gc_cache") || "null"); if(!c) return false; S.rows=c.rows||[]; S.soz=c.soz||[]; S.kira=c.kira||[]; S.firsat=c.firsat||[]; S.og=c.og||[]; return true; }catch(_){ return false; } }
 
 // ---------- helpers ----------
 const pad = n => String(n).padStart(2,"0");
@@ -218,19 +218,19 @@ function clearForm(keepName){
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
-  $("histBox").innerHTML=""; $("dupWarn").classList.add("hidden");
+  $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("dupWarn").classList.add("hidden");
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
   const c=S.contacts.get(key); if(!c) return;
-  S.sel=key; S.histAll=false;
+  S.sel=key; S.histAll=false; S.ogOpen=false;
   setVal("n",c.name); setVal("t",c.t); setVal("rf",c.rf); setVal("em",c.em); setVal("tf",c.tf);
   setVal("no",""); setVal("na",""); setVal("nd",""); setVal("pb",""); setVal("ad",""); setVal("d",todayISO());
   S.ct=""; S.kt=c.kt||""; S.p=c.p||""; $("kN").checked=false;
   $("fTitle").textContent=c.name;
   $("fMeta").textContent=`${c.recs.length} kayıt · son görüşme ${c.lastDate?tr(c.lastDate):"—"}`;
   $("dupWarn").classList.add("hidden");
-  renderHist(); buildChips(); renderResults();
+  renderHist(); renderOg(); buildChips(); renderResults();
   document.body.classList.add("editing");
   if(focusNote) setTimeout(()=>$("no").focus({preventScroll:true}),50);
 }
@@ -382,14 +382,16 @@ function renderToday(){
   const {a,b,c}=buckets();
   const rem=sozReminders();
   const leads=todaysLeads();
-  const nb=a.length+rem.filter(r=>r.dd<=7).length;
+  const nb=a.length+rem.filter(r=>r.dd<=7).length+ogUpcoming(0).length;
   const badge=$("bugunBadge"); if(nb){ badge.textContent=nb; badge.classList.remove("hidden"); } else badge.classList.add("hidden");
   const sec=(title,items,extra)=>`<div class="today-sec"><h3>${title}<span class="n">${extra||items.length+" kişi"}</span></h3>${items.map(callRow).join("")||`<div class="empty">Bu bölümde kimse yok.</div>`}</div>`;
   const leadSec=`<div class="today-sec"><h3>Bugün görüşülecek yeni adaylar<span class="n">${leads.length} kişi</span></h3>${leads.map(leadRow).join("")||`<div class="empty">Rehberden eklenecek yeni aday yok.</div>`}</div>`;
+  const ogs=ogUpcoming(7);
+  const ogSec = ogs.length ? `<div class="today-sec"><h3>Önemli günler<span class="n">önümüzdeki 7 gün · ${ogs.length}</span></h3>${ogs.map(ogRow).join("")}</div>` : "";
   const ft=firsatTotals();
   const pipeSec = ft.total ? `<div class="today-sec"><h3>Fırsat Pipeline'ı<span class="n">${ft.open} açık / ${ft.total} toplam</span></h3><div class="call" style="cursor:default"><span></span><div><div class="nm">Ağırlıklı gelir tahmini: ${fmtTL(ft.I)}</div><div class="sub">Toplam potansiyel komisyon: ${fmtTL(ft.F)}</div></div><span></span></div></div>` : "";
   $("todayBox").innerHTML =
-    pipeSec +
+    ogSec + pipeSec +
     (rem.length?`<div class="today-sec"><h3>Sözleşme & kira hatırlatmaları<span class="n">${rem.length} hatırlatma</span></h3>${rem.map(remRow).join("")}</div>`:"") +
     sec("Bugün ve son 7 gün",a) +
     sec("Öncelikli birikmiş takip",b.slice(0,10),`ilk 10 · toplam ${b.length} birikmiş`) +
@@ -833,6 +835,130 @@ function remRow(r){
   const [l,cls]=dueLbl(r.dd);
   return `<div class="call" data-mod="${r.mod}" data-id="${esc(r.id)}" tabindex="0" role="button"><span class="due ${cls}">${l}</span><div><div class="nm">${esc(r.kind)} · ${esc(r.title||"")}</div><div class="sub">${esc(r.sub)}</div></div><span></span></div>`;
 }
+
+// ================= Önemli günler (birthdays, home-purchase anniversaries …) =================
+// Stored in their own sheet/table of the CRM workbook ("🎂 Özel Günler" / OzelGunler), created on first use.
+// Sales contracts add the buyer's title-deed anniversary automatically (read-only, from Sözleşme).
+const OG_SHEET="🎂 Özel Günler", OG_TABLE="OzelGunler", OG_HEAD=["Contact name","Telephone","Occasion","Date","Note","Added"];
+const OG_TYPES=["Doğum günü","Ev alış yıldönümü","Evlilik yıldönümü","Diğer"];
+const OG_ICON={"Doğum günü":"🎂","Ev alış yıldönümü":"🏠","Evlilik yıldönümü":"💍"};
+const MON_TR=["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
+S.og=[]; S.ogType="Doğum günü";
+function ogParse(v){
+  if(typeof v==="number" && v>2000){ const iso=fromSerial(v); const [y,m,d]=iso.split("-").map(Number); return {d,m,y}; }
+  const s=String(v||"").trim().replace(/^'/,""); let x;
+  if((x=s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return {d:+x[3],m:+x[2],y:+x[1]};
+  if((x=s.match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?$/))) return {d:+x[1],m:+x[2],y:x[3]?+x[3]:0};
+  return null;
+}
+function ogText(p){ return pad(p.d)+"."+pad(p.m)+(p.y?"."+p.y:""); }
+function ogLabel(p){ return p.d+" "+MON_TR[p.m-1]+(p.y?" "+p.y:""); }
+function ogNext(p){
+  const t=todayISO(); let y=Number(t.slice(0,4));
+  const mk=yy=>{ const leap=(yy%4===0&&yy%100!==0)||yy%400===0; const d=(p.m===2&&p.d===29&&!leap)?28:p.d; return yy+"-"+pad(p.m)+"-"+pad(d); };
+  let iso=mk(y); if(dayDiff(iso)<0){ y++; iso=mk(y); }
+  return {iso, dd:dayDiff(iso), years:p.y?y-p.y:0};
+}
+async function loadOg(){
+  try{
+    const r=await graph(`${WB}/tables('${OG_TABLE}')/range?$select=values`);
+    const head=r.values[0].map(h=>String(h).trim()), ix=h=>head.indexOf(h);
+    S.og=r.values.slice(1).map((c,i)=>({i, n:String(c[ix("Contact name")]??"").trim(), t:String(c[ix("Telephone")]??""), type:String(c[ix("Occasion")]??"").trim(), p:ogParse(c[ix("Date")]), note:String(c[ix("Note")]??"")})).filter(o=>o.n && o.p);
+    S.ogMissing=false;
+  }catch(e){ if(e && e.code==="http_404"){ S.og=[]; S.ogMissing=true; } else throw e; }
+}
+async function ensureOg(){
+  if(!S.ogMissing) return;
+  try{ await graph(`${WB}/worksheets/add`,{method:"POST",body:{name:OG_SHEET}}); }catch(e){ if(e && e.code==="redirect") throw e; }
+  await graph(`${wsPath(OG_SHEET)}/range(address='A1:F1')`,{method:"PATCH",body:{values:[OG_HEAD]}});
+  const tb=await graph(`${wsPath(OG_SHEET)}/tables/add`,{method:"POST",body:{address:"A1:F1",hasHeaders:true}});
+  await graph(`${WB}/tables/${encodeURIComponent(tb.id||tb.name)}`,{method:"PATCH",body:{name:OG_TABLE}});
+  S.ogMissing=false;
+}
+// all occasions known for the app: the table + buyers' deed anniversaries from sales contracts
+function ogAll(){
+  const out=S.og.map(o=>({...o, src:"og"}));
+  for(const d of S.soz||[]){
+    if(isKira(d) || String(d.AK||"").includes("İptal") || !d.R) continue;
+    const base=isISO(d.AH)?d.AH:(isISO(d.C)?d.C:""); if(!base) continue;
+    const [y,m,dd]=base.split("-").map(Number);
+    out.push({n:d.R, t:d.S||"", type:"Ev alış yıldönümü", p:{d:dd,m,y}, note:(d.E||"")+" · sözleşme "+(d.A||""), src:"soz"});
+  }
+  return out;
+}
+function ogFor(key){ return ogAll().filter(o=>norm(o.n)===key); }
+function ogUpcoming(days){
+  return ogAll().map(o=>({...o, nx:ogNext(o.p)})).filter(o=>o.nx.dd>=0 && o.nx.dd<=days).sort((a,b)=>a.nx.dd-b.nx.dd);
+}
+function ogWhat(o){
+  const yrs=o.nx?o.nx.years:ogNext(o.p).years;
+  const extra = yrs>0 ? (o.type==="Doğum günü" ? ` · ${yrs}. yaş` : ` · ${yrs}. yıl`) : "";
+  return (OG_ICON[o.type]||"📌")+" "+o.type+extra;
+}
+function renderOg(){
+  const box=$("ogBox"); if(!box) return;
+  const c=S.contacts.get(S.sel);
+  if(!c){ box.innerHTML=""; return; }
+  const items=ogFor(c.key).map(o=>({...o, nx:ogNext(o.p)})).sort((a,b)=>a.nx.dd-b.nx.dd);
+  const types=[...OG_TYPES]; if(S.ogType && !types.includes(S.ogType)) types.splice(3,0,S.ogType);
+  box.innerHTML=`<details class="sec ogsec"${items.length||S.ogOpen?" open":""}><summary>Önemli günler<span class="cnt">${items.length?" · "+items.length:""}</span></summary>
+    ${items.map(o=>`<div class="ogitem"><div><div class="nm">${esc(ogWhat(o))}</div><div class="sub">${esc(ogLabel(o.p))} · ${o.nx.dd===0?"bugün":o.nx.dd+" gün sonra"}${o.note?" · "+esc(o.note):""}</div></div>${o.src==="og"?`<span class="delwrap ogdel" data-i="${o.i}"><button type="button" class="del">Sil</button></span>`:`<span class="sub">otomatik</span>`}</div>`).join("") || `<p class="hint">Henüz kayıtlı gün yok.</p>`}
+    <div class="ogadd">
+      <div class="chips" id="ogTypes">${types.map(t=>`<button type="button" class="chip" data-v="${esc(t)}" aria-pressed="${t===S.ogType}">${esc(t)}</button>`).join("")}</div>
+      <input id="ogOther" class="otherin${S.ogType==="Diğer"?"":" hidden"}" placeholder="Ne günü? (örn. Şirket kuruluşu)" aria-label="Gün türü">
+      <div class="row"><div class="f"><label for="ogDate">Tarih</label><input id="ogDate" type="date"></div>
+      <div class="f"><label for="ogNote">Not (isteğe bağlı)</label><input id="ogNote" placeholder="Örn. eşi Ayşe"></div></div>
+      <label class="keep" style="margin-top:8px"><input type="checkbox" id="ogNoYear"> Yılı bilinmiyor</label>
+      <button type="button" class="act ok" id="ogAddBtn" style="margin-top:10px">Günü ekle</button>
+    </div></details>`;
+}
+async function addOg(){
+  const c=S.contacts.get(S.sel); if(!c) return;
+  let type=S.ogType; if(type==="Diğer"){ type=($("ogOther").value||"").trim(); if(!type){ toast("Günün adını yaz"); $("ogOther").focus(); return; } }
+  const v=$("ogDate").value; if(!isISO(v)){ toast("Tarihi seç"); $("ogDate").focus(); return; }
+  const [y,m,d]=v.split("-").map(Number); const p={d,m,y:$("ogNoYear").checked?0:y};
+  if(ogFor(c.key).some(o=>o.type===type && o.p.d===p.d && o.p.m===p.m)){ toast("Bu gün zaten kayıtlı"); return; }
+  const btn=$("ogAddBtn"); btn.disabled=true; btn.textContent="Excel'e yazılıyor…";
+  try{
+    await loadOg(); await ensureOg();
+    await graph(`${WB}/tables('${OG_TABLE}')/rows/add`,{method:"POST",body:{values:[[c.name, cellIn(c.t||""), type, "'"+ogText(p), $("ogNote").value.trim(), serial(todayISO())]]}});
+    await loadOg(); saveCache();
+    S.ogOpen=true; toast("Önemli gün eklendi"); renderOg(); renderToday();
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Önemli gün eklenemedi")); btn.disabled=false; btn.textContent="Günü ekle"; }
+}
+async function delOg(i){
+  const o=S.og.find(x=>x.i===Number(i)); if(!o) return;
+  try{
+    await loadOg();
+    const f=S.og.find(x=>x.n===o.n && x.type===o.type && x.p.d===o.p.d && x.p.m===o.p.m); if(!f) throw {code:"not_found"};
+    await graph(`${WB}/tables('${OG_TABLE}')/rows/itemAt(index=${f.i})`,{method:"DELETE"});
+    await loadOg(); saveCache(); toast("Silindi"); renderOg(); renderToday();
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Silinemedi")); renderOg(); }
+}
+function wireOg(){
+  $("ogBox").addEventListener("keydown",e=>{ if(e.key==="Enter" && e.target.tagName==="INPUT"){ e.preventDefault(); if(e.target.id!=="ogOther") addOg(); } });
+  $("ogBox").addEventListener("click",e=>{
+    const ch=e.target.closest("#ogTypes .chip");
+    if(ch){ S.ogType=ch.dataset.v; document.querySelectorAll("#ogTypes .chip").forEach(x=>x.setAttribute("aria-pressed",x===ch)); $("ogOther").classList.toggle("hidden",S.ogType!=="Diğer"); if(S.ogType==="Diğer") $("ogOther").focus(); return; }
+    if(e.target.id==="ogAddBtn"){ addOg(); return; }
+    const w=e.target.closest(".ogdel");
+    if(w){ e.preventDefault();
+      if(e.target.closest(".yes")){ w.innerHTML='<span class="ask">Siliniyor…</span>'; return delOg(w.dataset.i); }
+      if(e.target.closest(".no")){ w.innerHTML='<button type="button" class="del">Sil</button>'; return; }
+      if(e.target.closest(".del")) w.innerHTML='<span class="ask">Silinsin mi?</span><button type="button" class="yes">Evet</button><button type="button" class="no">Vazgeç</button>';
+    }
+  });
+}
+function ogRow(o){
+  const ct=S.contacts.get(norm(o.n)); const wa=waNum(o.t||(ct&&ct.t)||"");
+  const [l,cls]=o.nx.dd===0?["Bugün","now"]:[o.nx.dd===1?"Yarın":o.nx.dd+" gün sonra","soon"];
+  return `<div class="call" ${ct?`data-k="${esc(ct.key)}"`:""} tabindex="0" role="button">
+    <span class="due ${cls}">${l}</span>
+    <div><div class="nm">${esc(o.n)}</div><div class="sub">${esc(ogWhat(o))} · ${esc(ogLabel(o.p))}${o.note?" · "+esc(o.note):""}</div></div>
+    ${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:`<span></span>`}
+  </div>`;
+}
+
 function showView(v){
   const map={k:"viewKayit",b:"viewBugun",s:"viewSoz",r:"viewKira",p:"viewFirsat"}, tabs={k:"tabKayit",b:"tabBugun",s:"tabSoz",r:"tabKira",p:"tabFirsat"};
   for(const [key,id] of Object.entries(map)){ $(id).classList.toggle("hidden",key!==v); $(tabs[key]).setAttribute("aria-selected",key===v); }
@@ -855,6 +981,7 @@ function wire(){
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
   $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) selectContact(b.dataset.k); });
+  wireOg();
   $("histBox").addEventListener("click",e=>{
     const w=e.target.closest(".delwrap");
     if(w){
@@ -897,7 +1024,7 @@ function syncLbl(){ const at=new Date(); $("syncLbl").textContent=`${S.contacts.
 async function refresh(manual){
   $("syncLbl").textContent="Excel okunuyor…";
   try{
-    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat")]);
+    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat"), loadOg().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; })]);
     S.modsLoaded=true;
     const busy=document.activeElement && ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName);
     rebuild(); if(!busy){ renderModList("soz"); renderModList("kira"); renderModList("firsat"); }
