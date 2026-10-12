@@ -216,6 +216,8 @@ function renderResults(){
       <div class="sub">${esc([l.phone1, l.email, l.org].filter(Boolean).join("  ·  "))}</div>
     </button>`).join(""));
     if(!res.length) $("qHint").textContent="CRM'de yok · telefon rehberinde bulundu. Seçince bilgileri forma gelir.";
+  } else if(q.trim().length>=2 && S.leadsState!=="ready"){
+    $("qHint").textContent += S.leadsState==="loading" ? " · Telefon rehberi yükleniyor…" : S.leadsState==="error" ? " · Telefon rehberi okunamadı ("+S.leadsErr+")" : " · Telefon rehberi boş";
   }
 }
 // phone-contacts search (all Rehber entries not already in CRM by phone)
@@ -231,6 +233,23 @@ function rehberSearch(q){
   }
   return out;
 }
+function rehberSuggest(){
+  const box=$("rehSug"); if(!box) return;
+  const n=$("n").value.trim();
+  if(S.sel || n.length<3){ box.innerHTML=""; box.hidden=true; return; }
+  if(S.contacts.has(norm(n))){ box.innerHTML=""; box.hidden=true; return; }
+  const hits=rehberSearch(n).slice(0,5);
+  if(!hits.length){ box.hidden=S.leadsState==="ready"; box.innerHTML=S.leadsState==="loading"?`<p class="hint">Telefon rehberi yükleniyor…</p>`:S.leadsState==="error"?`<p class="hint">Telefon rehberi okunamadı (${esc(S.leadsErr)}).</p>`:""; return; }
+  box.hidden=false;
+  box.innerHTML=`<div class="rehh">📇 Telefon rehberinde</div>`+hits.map(l=>`<button type="button" class="person rehp" data-fill="${esc(l.id)}"><div class="nm">${esc(l.name)}</div><div class="sub">${esc([l.phone1,l.email,l.org].filter(Boolean).join("  ·  "))}</div></button>`).join("");
+}
+function fillFromLead(id){
+  const l=(S.leads||[]).find(x=>x.id===id); if(!l) return;
+  setVal("n",l.name); setVal("t",l.phone1||l.phone2||l.phone3||"");
+  if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · "));
+  $("fTitle").textContent=l.name; $("rehSug").innerHTML=""; $("rehSug").hidden=true; checkDup(); toast("Rehberden dolduruldu");
+  setTimeout(()=>$("no").focus({preventScroll:true}),50);
+}
 function rehberByPhone(v){
   const pk=phoneKey(v); if(!pk) return null;
   return (S.leads||[]).find(l=>[l.phone1,l.phone2,l.phone3].some(p=>phoneKey(p)===pk)) || null;
@@ -245,7 +264,7 @@ function clearForm(keepName){
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
-  $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
+  $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; $("rehSug").innerHTML=""; $("rehSug").hidden=true; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
@@ -257,6 +276,7 @@ function selectContact(key, focusNote=true){
   $("fTitle").textContent=c.name;
   $("fMeta").textContent=`${c.recs.length} kayıt · son görüşme ${c.lastDate?tr(c.lastDate):"—"}`;
   $("dupWarn").classList.add("hidden");
+  $("rehSug").innerHTML=""; $("rehSug").hidden=true;
   renderHist(); renderOg(); renderDocs(); buildChips(); renderResults();
   document.body.classList.add("editing");
   if(focusNote) setTimeout(()=>$("no").focus({preventScroll:true}),50);
@@ -507,6 +527,7 @@ function parseVCards(text){
 async function loadLeads(force){
   const lbl=$("leadImportLbl");
   let cache={files:{}}; try{ cache=JSON.parse(localStorage.getItem("gc_leads")||"null")||{files:{}}; }catch(_){}
+  S.leadsState="loading"; S.leadsErr="";
   try{
     if(lbl) lbl.textContent="Rehber kontrol ediliyor…";
     const res=await graph(`/drives/${DRIVE_ID}/items/${REHBER_FOLDER_ID}/children?$select=id,name,eTag,createdDateTime,file&$top=200`);
@@ -516,13 +537,15 @@ async function loadLeads(force){
       const old=cache.files[f.id];
       if(old && old.eTag===f.eTag && !force){ next.files[f.id]=old; continue; }
       if(lbl) lbl.textContent="İşleniyor: "+f.name;
-      const meta=await graph(`/drives/${DRIVE_ID}/items/${f.id}?$select=id,@microsoft.graph.downloadUrl`);
-      const text=await (await fetch(meta["@microsoft.graph.downloadUrl"])).text();
+      const meta=await graph(`/drives/${DRIVE_ID}/items/${f.id}`);
+      const dl=meta["@microsoft.graph.downloadUrl"]; if(!dl) throw {code:"no_url", message:"indirme linki alınamadı"};
+      const resp=await fetch(dl); if(!resp.ok) throw {code:"http_"+resp.status, message:"rehber dosyası indirilemedi"};
+      const text=await resp.text();
       next.files[f.id]={eTag:f.eTag, name:f.name, at:f.createdDateTime, cards:parseVCards(text).map(c=>[c.name,c.phones.slice(0,3),c.email,c.org,c.title])};
     }
     cache=next;
     try{ localStorage.setItem("gc_leads", JSON.stringify(cache)); }catch(_){}
-  }catch(e){ console.error(e); if(e && e.code==="redirect") return; }
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; S.leadsErr=(e&&(e.message||e.code))||"bilinmeyen hata"; }
   // build the lead list: one entry per phone, first file wins
   const used=new Set(); const out=[]; let seq=0;
   for(const f of Object.values(cache.files).sort((a,b)=>String(a.at).localeCompare(String(b.at)))){
@@ -534,7 +557,9 @@ async function loadLeads(force){
       out.push({id:"lead_"+seq, seq, name, phone1:phones[0]||"", phone2:phones[1]||"", phone3:phones[2]||"", email:email||"", org:org||"", title:title||"", isForeign:isForeignPhone(phones[0]||""), noPhone:!phones.length});
     }
   }
-  S.leads=out;
+  S.leads=out; S.leadsState = out.length ? "ready" : (S.leadsErr ? "error" : "empty");
+  if($("q").value) renderResults();
+  if($("n").value && !S.sel) rehberSuggest();
   if(lbl) lbl.textContent=out.length ? `Rehber: ${leadPool().length} aday` : "";
   renderToday();
 }
@@ -1170,8 +1195,10 @@ function wire(){
   $("backBtn").addEventListener("click",()=>document.body.classList.remove("editing"));
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
+  $("n").addEventListener("input",()=>{ clearTimeout(S.sugT); S.sugT=setTimeout(rehberSuggest,200); });
+  $("rehSug").addEventListener("click",e=>{ const b=e.target.closest("[data-fill]"); if(b) fillFromLead(b.dataset.fill); });
   $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
-    if(b.dataset.fill){ const l=(S.leads||[]).find(x=>x.id===b.dataset.fill); if(!l) return; setVal("n",l.name); if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · ")); $("fTitle").textContent=l.name; $("dupWarn").classList.add("hidden"); toast("Rehberden dolduruldu"); return; }
+    if(b.dataset.fill){ fillFromLead(b.dataset.fill); $("dupWarn").classList.add("hidden"); return; }
     selectContact(b.dataset.k); });
   // Android Chrome: pick straight from the phone's contacts (Contact Picker API); iPhone uses the Rehber export
   if("contacts" in navigator && "ContactsManager" in window){
@@ -1256,8 +1283,9 @@ async function boot(){
   let tab="k"; try{ tab=localStorage.getItem("gc_tab")||"k"; }catch(_){}
   if(qs.get("tab")) tab=qs.get("tab");
   showView(["k","b","s","r","p"].includes(tab)?tab:"k");
+  S.leadsAt=Date.now(); S.leadsState="loading"; const lp=loadLeads(false);
   await refresh(false);
-  if(!S.leadsAt){ S.leadsAt=Date.now(); loadLeads(false).then(()=>{ if($("q").value) renderResults(); }); }
+  lp.then(()=>renderToday());
   const c=qs.get("c"); if(c){ const key=norm(c); if(S.contacts.has(key)){ showView("k"); selectContact(key); } else { showView("k"); $("q").value=c; renderResults(); } history.replaceState(null,"",location.pathname); }
   document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && Date.now()-(S.lastRefresh||0)>60000){ const busy=document.activeElement && ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName); if(!busy) refresh(false); } });
 }
