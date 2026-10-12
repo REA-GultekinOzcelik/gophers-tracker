@@ -294,7 +294,7 @@ function renderHist(){
   $("histBox").innerHTML=`<div class="hist">${show.map(r=>`
     <div class="hist-item">
       <div class="when">${tr(r.d)||"tarihsiz"}${r.ct?" · "+esc(r.ct):""}${r.rf?" · "+esc(r.rf):""}</div>
-      ${r.no?`<div class="what">${esc(r.no)}</div>`:""}
+      ${r.no?`<div class="what">${esc(r.no)}${isURL(r.x)?` · <a class="doclink" href="${esc(r.x)}" target="_blank" rel="noopener">Klasörü aç ›</a>`:""}</div>`:""}
       ${(r.na||r.nd)?`<div class="next">Sonraki: ${esc(r.na||"")}${r.nd?" ("+tr(r.nd)+")":""}</div>`:""}
       <span class="delwrap" data-id="${esc(r._id)}"><button type="button" class="del">Sil</button></span>
     </div>`).join("")}</div>${recs.length>3?`<button type="button" class="more-hist" id="moreHist">${S.histAll?"Daha az göster":`Tüm geçmiş (${recs.length})`}</button>`:""}`;
@@ -1070,9 +1070,9 @@ function fmtSize(n){ return n>1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(
 async function renderDocs(){
   const box=$("docBox"); if(!box) return;
   const c=S.contacts.get(S.sel);
-  if(!c){ box.innerHTML=""; return; }
+  if(!c){ box.innerHTML=$("n").value.trim()?`<p class="hint">📎 Doküman eklemek için önce kişiyi kaydet.</p>`:""; return; }
   const key=c.key;
-  box.innerHTML=`<details class="sec docsec"${S.docOpen?" open":""}><summary>Dokümanlar<span class="cnt" id="docCnt"></span></summary>
+  box.innerHTML=`<details class="sec docsec" open><summary>📎 Dokümanlar<span class="cnt" id="docCnt"></span></summary>
     <div id="docList"><p class="hint">Okunuyor…</p></div>
     <label class="act ok filebtn">📎 Doküman ekle<input type="file" id="docFile" multiple hidden></label>
     <p class="hint">Dosya OneDrive'da "Gophers CRM › Dokümanlar › Kişiler › ${esc(safeName(c.name))}" klasörüne kaydedilir.</p></details>`;
@@ -1099,7 +1099,14 @@ function wireDocs(){
     if(e.target.id!=="docFile") return;
     const c=S.contacts.get(S.sel); if(!c) return;
     const files=[...e.target.files]; e.target.value="";
-    S.docOpen=true; uploadDocs(files,"kisi",c.name,()=>renderDocs());
+    S.docOpen=true;
+    uploadDocs(files,"kisi",c.name,folder=>{
+      renderDocs();
+      // leave a trace in the CRM history; keep the contact's current follow-up (next action, keep flag) unchanged
+      const last=c.last||{};
+      addCrmRow({d:todayISO(), by:"Gültekin", n:c.name, t:c.t, rf:c.rf, p:c.p, kt:c.kt, tf:c.tf, ct:"Doküman", no:"📎 Doküman eklendi: "+files.map(f=>f.name).join(", "), x:folder.webUrl||"", k:last.k||"Y", nd:last.nd||"", na:last.na||""})
+        .then(()=>{ if(S.sel===c.key) renderHist(); }).catch(e=>{ console.error(e); banner(errMsg(e,"Doküman yüklendi ama CRM geçmişine yazılamadı")); });
+    });
   });
   // contract documents (Sözleşme form): upload + fill the "Cloud Belge Linki" field
   $("sozForm").addEventListener("change",e=>{
