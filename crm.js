@@ -256,28 +256,71 @@ function checkDup(){
 }
 
 
+// append one log row to the CRM table and update the local model
+async function addCrmRow(rec){
+  Object.keys(rec).forEach(k=>{ if(rec[k]===""||rec[k]==null) delete rec[k]; });
+  const head=S.crmHead, idx=S.crmIdx;
+  if(!head) throw {code:"not_loaded", message:"CRM henüz yüklenmedi"};
+  const vals=Array(head.length).fill("");
+  COLS.forEach(([k],j)=>{ const ix=idx[j]; if(ix<0) return; let v=rec[k]; if((k==="d"||k==="nd") && isISO(v)) v=serial(v); vals[ix]=cellIn(v); });
+  await graph(`${WB}/tables('CRM')/rows/add`,{method:"POST",body:{values:[vals]}});
+  rec.seq=S.rows.reduce((m,r)=>Math.max(m,r.seq||0),0)+1; rec._id="new"+rec.seq;
+  S.rows.push(rec);
+  rebuild(); saveCache(); syncLbl();
+  loadCrm().then(()=>{ rebuild(); saveCache(); if(S.sel) renderHist(); }).catch(()=>{});
+}
+// quick actions from Bugün: "Arandı" (log the call, optional next date) and "Takipten çıkar" (Keep = N)
+async function quickAction(row, kind, opt){
+  const key=row.dataset.k, lead=row.dataset.lead;
+  const ct=key?S.contacts.get(key):null, l=lead?(S.leads||[]).find(x=>x.id===lead):null;
+  let rec;
+  if(ct){
+    const base={d:todayISO(), by:"Gültekin", n:ct.name, t:ct.t, rf:ct.rf, p:ct.p, kt:ct.kt, tf:ct.tf};
+    rec = kind==="done"
+      ? {...base, ct:"Call Out", no:opt.note||"Arandı", k:"Y", nd:opt.nd||"", na:opt.nd?(opt.na||"Takip"):""}
+      : {...base, no:opt.note||"Takipten çıkarıldı (ilgisiz)", k:"N"};
+  } else if(l){
+    rec={d:todayISO(), by:"Gültekin", n:l.name, t:l.phone1||l.phone2||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", no:"Rehber adayı: ilgisiz, listeden çıkarıldı", k:"N"};
+  } else return;
+  row.querySelectorAll("button").forEach(b=>b.disabled=true);
+  try{ await addCrmRow(rec); toast(kind==="done"?(opt.nd?"Arandı · sonraki "+tr(opt.nd):"Arandı olarak kaydedildi"):"Listeden çıkarıldı"); }
+  catch(err){ console.error(err); if(err && err.code==="redirect") return; banner(errMsg(err,"Kaydedilemedi")); renderToday(); }
+}
+function actsHtml(lead){
+  return lead
+    ? `<div class="acts"><button type="button" class="act" data-act="drop">İlgisiz</button></div>`
+    : `<div class="acts"><button type="button" class="act ok" data-act="done">✓ Arandı</button><button type="button" class="act" data-act="drop">Takipten çıkar</button></div>`;
+}
+function onAct(e){
+  const chip=e.target.closest(".qa .chip");
+  if(chip){ e.stopPropagation(); chip.parentNode.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c===chip)); return true; }
+  const b=e.target.closest("[data-act]"); if(!b) return false;
+  e.preventDefault(); e.stopPropagation();
+  const row=b.closest(".call"), box=row.querySelector(".acts"), a=b.dataset.act;
+  if(a==="done"){
+    box.innerHTML=`<div class="qa"><span class="lab">Sonraki aksiyon</span><div class="chips">${[["Yok",0],["3 gün",3],["1 hafta",7],["2 hafta",14],["1 ay",30]].map(([t,n],i)=>`<button type="button" class="chip" data-nd="${n}" aria-pressed="${i===0}">${t}</button>`).join("")}</div><input class="qnote" placeholder="Kısa not (isteğe bağlı)" aria-label="Kısa not"><div class="qbtns"><button type="button" class="act ok" data-act="doneSave">Kaydet</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div></div>`;
+    setTimeout(()=>{ const i=box.querySelector(".qnote"); if(i) i.focus({preventScroll:true}); },30);
+  } else if(a==="drop"){
+    box.innerHTML=`<div class="qbtns"><span class="ask">${row.dataset.lead?"Bu aday bir daha gösterilmesin mi?":"Takipten çıkarılsın mı? Bir daha gelmez."}</span><button type="button" class="act warn" data-act="dropYes">Evet, çıkar</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div>`;
+  } else if(a==="cancel"){ renderToday(); }
+  else if(a==="doneSave"){
+    const sel=box.querySelector('.chip[aria-pressed="true"]'); const n=sel?Number(sel.dataset.nd):0;
+    quickAction(row,"done",{nd:n?addDays(todayISO(),n):"", note:(box.querySelector(".qnote").value||"").trim()});
+  } else if(a==="dropYes"){ quickAction(row,"drop",{}); }
+  return true;
+}
 async function save(e){
   e.preventDefault();
   const n=$("n").value.trim(), no=$("no").value.trim();
   if(!n){ $("n").focus(); toast("Ad soyad gerekli"); return; }
   if(!no){ $("no").focus(); toast("Görüşme notu gerekli"); return; }
   const rec={d:$("d").value||todayISO(), by:"Gültekin", ct:S.ct, n, kt:S.kt, t:$("t").value.trim(), em:$("em").value.trim(), ad:$("ad").value.trim(), pb:$("pb").value.trim(), rf:$("rf").value.trim(), no, k:$("kN").checked?"N":"Y", tf:$("tf").value.trim(), p:S.p, nd:$("nd").value, na:$("na").value.trim()};
-  Object.keys(rec).forEach(k=>{ if(rec[k]===""||rec[k]==null) delete rec[k]; });
   $("saveBtn").disabled=true; $("saveBtn").textContent="Excel'e yazılıyor…";
   try{
-    const head=S.crmHead, idx=S.crmIdx;
-    if(!head) throw {code:"not_loaded", message:"CRM henüz yüklenmedi"};
-    const vals=Array(head.length).fill("");
-    COLS.forEach(([k],j)=>{ const ix=idx[j]; if(ix<0) return; let v=rec[k]; if((k==="d"||k==="nd") && isISO(v)) v=serial(v); vals[ix]=cellIn(v); });
-    await graph(`${WB}/tables('CRM')/rows/add`,{method:"POST",body:{values:[vals]}});
-    rec.seq=S.rows.reduce((m,r)=>Math.max(m,r.seq||0),0)+1; rec._id="new"+rec.seq;
-    S.rows.push(rec);
+    await addCrmRow(rec);
     const key=norm(n);
-    rebuild(); saveCache();
     toast("Kaydedildi");
     $("q").value=""; selectContact(key,false); setVal("no",""); setVal("na",""); setVal("nd","");
-    syncLbl();
-    loadCrm().then(()=>{ rebuild(); saveCache(); if(S.sel) renderHist(); }).catch(()=>{});
   }catch(err){
     console.error(err); if(err && err.code==="redirect") return;
     banner(errMsg(err,"Kaydedilemedi")); toast("Kaydedilemedi");
@@ -331,7 +374,7 @@ function callRow({ct,r,dd}){
   return `<div class="call" data-k="${esc(ct.key)}" tabindex="0" role="button">
     <span class="due ${cls}">${l}</span>
     <div><div class="nm">${esc(ct.name)}${ct.p?`<span class="${potCls(ct.p)}">${esc(ct.p)}</span>`:""}</div>
-    <div class="sub">${esc([r.na, ct.rf].filter(Boolean).join("  ·  "))}</div></div>
+    <div class="sub">${esc([r.na, ct.rf].filter(Boolean).join("  ·  "))}</div>${actsHtml(false)}</div>
     ${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:`<span></span>`}
   </div>`;
 }
@@ -378,7 +421,7 @@ function leadRow(l){
   return `<div class="call" data-lead="${esc(l.id)}" tabindex="0" role="button">
     <span class="due soon">Rehber</span>
     <div><div class="nm">${esc(l.name)}${l.isForeign?` <span class="pot pot-Low">Yabancı</span>`:""}</div>
-    <div class="sub">${esc(sub)}</div></div>
+    <div class="sub">${esc(sub)}</div>${actsHtml(true)}</div>
     ${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:`<span></span>`}
   </div>`;
 }
@@ -834,7 +877,7 @@ function wire(){
   $("signoutBtn").addEventListener("click",()=>msalApp.logoutRedirect({account:S.account, postLogoutRedirectUri:BASE+"crm.html"}));
   const show=showView;
   $("tabKayit").onclick=()=>show("k"); $("tabBugun").onclick=()=>show("b"); $("tabSoz").onclick=()=>show("s"); $("tabKira").onclick=()=>show("r"); $("tabFirsat").onclick=()=>show("p");
-  const openFromToday=e=>{ if(e.target.closest(".wa")) return; const r=e.target.closest(".call"); if(!r) return;
+  const openFromToday=e=>{ if(e.target.closest(".wa")) return; if(e.target.closest(".acts")){ if(e.type==="click") onAct(e); return; } const r=e.target.closest(".call"); if(!r) return;
     if(r.dataset.mod){ show(r.dataset.mod==="soz"?"s":"r"); openMod(r.dataset.mod,r.dataset.id); return; }
     if(r.dataset.lead){ show("k"); openLead(r.dataset.lead); return; }
     show("k"); selectContact(r.dataset.k); };

@@ -220,7 +220,7 @@ function wireTasks(){
     finally{ $("tSave").disabled = false; }
   });
   $("crmRefresh").onclick = () => loadCrm(true);
-  const openCrm = e => { if(e.target.closest(".wa")) return; const r = e.target.closest("[data-crm]"); if(r) location.href = "crm.html?c=" + encodeURIComponent(r.dataset.crm); };
+  const openCrm = e => { if(e.target.closest(".wa")) return; if(e.target.closest(".acts")){ if(e.type === "click") crmAct(e); return; } const r = e.target.closest("[data-crm]"); if(r) location.href = "crm.html?c=" + encodeURIComponent(r.dataset.crm); };
   $("crmList").addEventListener("click", openCrm);
   $("crmList").addEventListener("keydown", e => { if(e.key === "Enter") openCrm(e); });
   $("tRefresh").onclick = async () => { banner(""); try{ await loadTasks(); renderT(); saveCache(); toast("Planner durumları güncellendi"); }catch(e){ showErr(e, "Görevler okunamadı"); } };
@@ -234,9 +234,9 @@ function crmNorm(s){ return String(s||"").toLocaleLowerCase("tr").normalize("NFD
 function crmDate(v){ v = String(v||"").trim(); let m; if(/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0,10); if(/^\d{5}(\.\d+)?$/.test(v)) return fromSerial(Math.floor(Number(v))); if((m = v.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/))) return m[3]+"-"+pad2(m[2])+"-"+pad2(m[1]); return ""; }
 function crmItems(head, rows){
   const ix = n => head.indexOf(n);
-  const I = {d:ix("Date"), n:ix("Contact name"), t:ix("Telephone"), k:ix("Keep (Y/N)"), p:ix("Potential Level"), nd:ix("Next Action Date"), na:ix("Next Action Type"), rf:ix("Reference")};
+  const I = {d:ix("Date"), n:ix("Contact name"), t:ix("Telephone"), k:ix("Keep (Y/N)"), p:ix("Potential Level"), nd:ix("Next Action Date"), na:ix("Next Action Type"), rf:ix("Reference"), kt:ix("Contact Type"), tf:ix("Touch Frequency")};
   const recs = [];
-  rows.forEach((c, i) => { const g = j => j >= 0 ? String(c[j] ?? "").trim() : ""; if(!g(I.n)) return; recs.push({d:crmDate(g(I.d)), n:g(I.n), t:g(I.t), k:g(I.k), p:g(I.p), nd:crmDate(g(I.nd)), na:g(I.na), rf:g(I.rf), seq:i}); });
+  rows.forEach((c, i) => { const g = j => j >= 0 ? String(c[j] ?? "").trim() : ""; if(!g(I.n)) return; recs.push({d:crmDate(g(I.d)), n:g(I.n), t:g(I.t), k:g(I.k), p:g(I.p), nd:crmDate(g(I.nd)), na:g(I.na), rf:g(I.rf), kt:g(I.kt), tf:g(I.tf), seq:i}); });
   const map = new Map();
   recs.sort((a,b) => (a.d||"").localeCompare(b.d||"") || a.seq-b.seq).forEach(r => { const k = crmNorm(r.n); if(!k) return; const c = map.get(k) || {recs:[]}; c.recs.push(r); map.set(k, c); });
   const td = today(), out = {a:[], b:[]};
@@ -244,7 +244,7 @@ function crmItems(head, rows){
     const r = c.recs[c.recs.length-1], pick = f => { for(let i = c.recs.length-1; i >= 0; i--) if(c.recs[i][f]) return c.recs[i][f]; return ""; };
     if(!r.nd || r.k === "N" || crmNorm(r.na).includes("olumsuz")) continue;
     const dd = Math.round((parseISO(r.nd) - parseISO(td)) / 864e5);
-    const item = {name:r.n, t:pick("t"), p:pick("p"), na:r.na, rf:pick("rf"), dd};
+    const item = {name:r.n, t:pick("t"), p:pick("p"), na:r.na, rf:pick("rf"), kt:pick("kt"), tf:pick("tf"), dd};
     if(dd < -7) out.b.push(item); else if(dd <= 0) out.a.push(item);
   }
   out.a.sort((x,y) => x.dd - y.dd);
@@ -254,7 +254,7 @@ function crmItems(head, rows){
 function waNum(s){ let d = String(s||"").replace(/\D/g,""); if(d.length === 10 && d[0] === "5") d = "90"+d; if(d.length === 11 && d.startsWith("05")) d = "9"+d; return (d.length === 12 && d.startsWith("905")) ? d : ""; }
 function crmRow(x){
   const lbl = x.dd === 0 ? ["Bugün","now"] : [`${-x.dd} gün geçti`, "late"], wa = waNum(x.t);
-  return `<div class="call" data-crm="${esc(x.name)}" role="link" tabindex="0" style="cursor:pointer"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(x.name)}${x.p?` <span class="tag ${POT[x.p]<=2?"wait":"on"}">${esc(x.p)}</span>`:""}</div><div class="m">${esc([x.na, x.rf].filter(Boolean).join(" · ")) || "Aksiyon tipi yok"}</div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;
+  return `<div class="call" data-crm="${esc(x.name)}" role="link" tabindex="0" style="cursor:pointer"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(x.name)}${x.p?` <span class="tag ${POT[x.p]<=2?"wait":"on"}">${esc(x.p)}</span>`:""}</div><div class="m">${esc([x.na, x.rf].filter(Boolean).join(" · ")) || "Aksiyon tipi yok"}</div><div class="acts"><button type="button" class="act ok" data-act="done">✓ Arandı</button><button type="button" class="act" data-act="drop">Takipten çıkar</button></div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;
 }
 let crmAt = 0;
 async function loadCrm(force){
@@ -270,12 +270,43 @@ async function loadCrm(force){
     }
     const body = await graph(`${base}/tables/${encodeURIComponent(S.crmTable)}/dataBodyRange?$select=values`);
     const res = crmItems(S.crmHead, body.values);
+    S.crmList = new Map(res.a.concat(res.b).map(x => [x.name, x]));
     crmAt = Date.now(); S.crmDue = res.a.length;
     $("crmSub").textContent = `${res.a.length} kişi bugün ya da son 7 günde · ${res.b.length} birikmiş · ${hm(new Date())}`;
     $("crmList").innerHTML = (res.a.length ? res.a.map(crmRow).join("") : `<div class="empty">Bugün için CRM aksiyonu yok.</div>`)
       + (res.b.length ? `<div class="crmh">Öncelikli birikmiş · ilk 5 / ${res.b.length}</div>` + res.b.slice(0,5).map(crmRow).join("") : "");
     renderT();
   }catch(err){ console.error(err); $("crmSub").textContent = "Okunamadı"; $("crmList").innerHTML = `<div class="empty">CRM okunamadı. "Yenile"ye bas.</div>`; }
+}
+
+// quick actions on the CRM card: log "Arandı" (optional next date) or set Keep = N, as a new row in the CRM table
+function crmCell(v){ if(v === undefined || v === null) return ""; if(typeof v === "number") return v; const s = String(v); if(!s) return ""; return (/^[=+\-@]/.test(s) || (/\d/.test(s) && /^[\d\s.,:\/()%]+$/.test(s))) ? "'"+s : s; }
+async function crmLog(x, kind, opt){
+  const td = today(), base = {"Date":serial(td), "Call By":"Gültekin", "Contact name":x.name, "Telephone":x.t, "Reference":x.rf, "Potential Level":x.p, "Contact Type":x.kt, "Touch Frequency":x.tf};
+  const rec = kind === "done"
+    ? Object.assign(base, {"Call Type":"Call Out", "Notes":opt.note || "Arandı", "Keep (Y/N)":"Y", "Next Action Date":opt.nd ? serial(opt.nd) : "", "Next Action Type":opt.nd ? "Takip" : ""})
+    : Object.assign(base, {"Notes":"Takipten çıkarıldı (ilgisiz)", "Keep (Y/N)":"N"});
+  const vals = S.crmHead.map(h => { const v = rec[h]; return typeof v === "number" ? v : crmCell(v); });
+  await graph(`/drives/${DRIVE_ID}/items/${CRM_FILE}/workbook/tables/${encodeURIComponent(S.crmTable)}/rows/add`, {method:"POST", body:{values:[vals]}});
+}
+function crmAct(e){
+  const chip = e.target.closest(".qa .chip");
+  if(chip){ chip.parentNode.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === chip)); return; }
+  const b = e.target.closest("[data-act]"); if(!b) return;
+  const row = b.closest("[data-crm]"), box = row.querySelector(".acts"), a = b.dataset.act, x = S.crmList && S.crmList.get(row.dataset.crm);
+  if(!x) return;
+  const run = async (kind, opt) => {
+    row.querySelectorAll("button").forEach(z => z.disabled = true);
+    try{ await crmLog(x, kind, opt); toast(kind === "done" ? (opt.nd ? "Arandı · sonraki " + trShort(opt.nd) : "Arandı olarak kaydedildi") : "Takipten çıkarıldı"); await loadCrm(true); }
+    catch(err){ console.error(err); showErr(err, "CRM'e yazılamadı"); loadCrm(true); }
+  };
+  if(a === "done"){
+    box.innerHTML = `<div class="qa"><span class="lab">Sonraki aksiyon</span><div class="chips">${[["Yok",0],["3 gün",3],["1 hafta",7],["2 hafta",14],["1 ay",30]].map(([t,n],i) => `<button type="button" class="chip" data-nd="${n}" aria-pressed="${i===0}">${t}</button>`).join("")}</div><input class="qnote" placeholder="Kısa not (isteğe bağlı)" aria-label="Kısa not"><div class="qbtns"><button type="button" class="act ok" data-act="doneSave">Kaydet</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div></div>`;
+  } else if(a === "drop"){
+    box.innerHTML = `<div class="qbtns"><span class="ask">Takipten çıkarılsın mı? Bir daha gelmez.</span><button type="button" class="act warn" data-act="dropYes">Evet, çıkar</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div>`;
+  } else if(a === "cancel") loadCrm(true);
+  else if(a === "doneSave"){ const sel = box.querySelector('.chip[aria-pressed="true"]'), n = sel ? Number(sel.dataset.nd) : 0; run("done", {nd: n ? addDaysISO(today(), n) : "", note: (box.querySelector(".qnote").value || "").trim()}); }
+  else if(a === "dropYes") run("drop", {});
 }
 
 // ---------- Hafta ----------
