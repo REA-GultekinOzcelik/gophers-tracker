@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gophers Tracker</title>
+<meta name="theme-color" content="#1F3864">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: one mobile-first column, sticky header with three tabs; same visual family as Gophers CRM Giriş */
+:root{
+  --paper:#F4F6F9; --card:#FFFFFF; --ink:#16202E; --mut:#5E6878; --line:#DDE2EA;
+  --navy:#1F3864; --navy-soft:#E6ECF5; --red:#B40101; --red-soft:#FBE7E6;
+  --amber:#9A6200; --amber-soft:#FFF3D6; --green:#1E7B46; --green-soft:#E3F4EA;
+  --focus:#2F6FD6; --onaccent:#FFFFFF;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#10151D; --card:#19202B; --ink:#E8ECF2; --mut:#9AA4B4; --line:#2A3342;
+    --navy:#8FB0E6; --navy-soft:#1E2A3D; --red:#FF6B5E; --red-soft:#3A1E1C;
+    --amber:#F0B44C; --amber-soft:#3A2E14; --green:#5CCB8A; --green-soft:#16301F; --focus:#7FA8F0; --onaccent:#10151D;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10151D; --card:#19202B; --ink:#E8ECF2; --mut:#9AA4B4; --line:#2A3342;
+  --navy:#8FB0E6; --navy-soft:#1E2A3D; --red:#FF6B5E; --red-soft:#3A1E1C;
+  --amber:#F0B44C; --amber-soft:#3A2E14; --green:#5CCB8A; --green-soft:#16301F; --focus:#7FA8F0; --onaccent:#10151D;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+.top-in{max-width:760px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:18px;letter-spacing:-.01em;color:var(--navy);white-space:nowrap}
+.brand small{display:block;font-weight:500;font-size:12px;color:var(--mut);letter-spacing:0}
+.tabs{display:flex;gap:4px;background:var(--paper);border-radius:10px;padding:3px;margin-left:auto}
+.tab{border:0;background:transparent;padding:8px 14px;border-radius:8px;font-weight:600;font-size:15px;color:var(--mut);cursor:pointer}
+.tab[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.tab .badge{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:10px;background:var(--red);color:var(--onaccent);font-size:12px;line-height:20px;text-align:center}
+.sync{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:var(--mut)}
+.sync button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer}
+main{max-width:760px;margin:0 auto;padding-block:14px 40px;padding-inline:16px;display:grid;gap:14px}
+.banner{max-width:760px;margin:12px auto 0;padding:12px 16px;border-radius:10px;background:var(--amber-soft);color:var(--amber);font-size:14px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.pad{padding:14px 16px}
+h2{margin:0;font-size:15px;font-weight:700;color:var(--navy);letter-spacing:.02em;text-transform:uppercase}
+.sub{font-size:13px;color:var(--mut)}
+
+/* week strip */
+.weekbar{display:flex;align-items:center;gap:8px}
+.weekbar .nav{border:1px solid var(--line);background:var(--card);border-radius:10px;width:40px;height:56px;font-size:20px;color:var(--navy);cursor:pointer;flex:none}
+.days{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;flex:1;min-width:0}
+.day{border:1.5px solid var(--line);background:var(--card);border-radius:10px;padding:6px 2px;cursor:pointer;text-align:center;min-width:0}
+.day .dn{font-size:12px;font-weight:600;color:var(--mut)}
+.day .dd{font-size:15px;font-weight:700}
+.day .ds{font-size:11.5px;font-weight:600;border-radius:6px;margin:3px 4px 0;line-height:18px;background:var(--paper);color:var(--mut)}
+.day .ds.ok{background:var(--green-soft);color:var(--green)}
+.day .ds.lo{background:var(--amber-soft);color:var(--amber)}
+.day[aria-current="true"]{border-color:var(--navy);background:var(--navy-soft)}
+.day.today .dn{color:var(--red)}
+
+/* score */
+.score{display:flex;align-items:center;gap:16px}
+.score .big{font-size:40px;font-weight:700;line-height:1;letter-spacing:-.02em}
+.score .big small{font-size:18px;color:var(--mut);font-weight:600}
+.meter{flex:1;min-width:0}
+.bar{position:relative;height:10px;border-radius:6px;background:var(--paper);border:1px solid var(--line);overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--amber);border-radius:6px}
+.bar i.ok{background:var(--green)}
+.bar b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink)}
+.meter .sub{margin-top:6px;display:flex;justify-content:space-between;gap:8px}
+
+/* checklist */
+.grp{padding:4px 0}
+.grp h3{margin:0;padding:12px 16px 4px;font-size:13px;font-weight:700;color:var(--mut);letter-spacing:.06em;text-transform:uppercase}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:10px 16px;border-top:1px solid var(--line)}
+.item .lbl{font-weight:600}
+.item .lbl .no{font-family:var(--mono);font-size:12.5px;color:var(--mut);margin-right:6px}
+.item .hint{font-size:13px;color:var(--mut)}
+.item .auto{font-size:11.5px;font-weight:600;color:var(--navy);background:var(--navy-soft);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+.seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:var(--card);min-width:52px;height:44px;font-weight:700;font-size:14px;cursor:pointer;color:var(--mut)}
+.seg button+button{border-left:1.5px solid var(--line)}
+.seg button[aria-pressed="true"][data-v="Y"]{background:var(--green);color:var(--onaccent)}
+.seg button[aria-pressed="true"][data-v="N"]{background:var(--red);color:var(--onaccent)}
+.seg button[aria-pressed="true"][data-v="N/A"]{background:var(--navy);color:var(--onaccent)}
+.step{display:flex;align-items:center;gap:6px}
+.step button{border:1.5px solid var(--line);background:var(--card);border-radius:10px;min-width:44px;height:44px;font-weight:700;font-size:18px;cursor:pointer;color:var(--navy)}
+.step button.plus5{font-size:14px;min-width:52px}
+.step input{width:64px;height:44px;text-align:center;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:18px;font-weight:700}
+.scale{grid-column:1/-1;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.scale button{border:1.5px solid var(--line);background:var(--card);border-radius:8px;height:40px;font-weight:700;cursor:pointer;color:var(--mut);padding:0}
+.scale button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:var(--onaccent)}
+.target{font-size:12px;font-weight:600;border-radius:6px;padding:1px 6px;margin-left:6px}
+.target.ok{background:var(--green-soft);color:var(--green)}
+.target.lo{background:var(--amber-soft);color:var(--amber)}
+.f{display:grid;gap:5px}
+.f label,.lab{font-size:13px;font-weight:600;color:var(--mut)}
+.f input,.f textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:16px}
+.f input:focus,.f textarea:focus{border-color:var(--navy);outline:none}
+.f textarea{min-height:84px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:500;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:var(--onaccent)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.ghost{border:1px solid var(--line);background:var(--card);color:var(--navy);font-weight:600;cursor:pointer;padding:8px 12px;border-radius:10px;font-size:14px}
+.save{width:100%;border:0;border-radius:12px;background:var(--red);color:var(--onaccent);font-weight:700;font-size:17px;padding:14px;cursor:pointer}
+.save:disabled{opacity:.55;cursor:default}
+.saved{font-size:13px;color:var(--mut)}
+
+/* tasks */
+.task{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:11px 16px;border-top:1px solid var(--line);align-items:start}
+.task .t{font-weight:600}
+.task .m{font-size:13px;color:var(--mut);grid-column:2}
+.due{font-size:12px;font-weight:700;border-radius:7px;padding:3px 8px;white-space:nowrap;text-align:center;min-width:76px}
+.due.late{background:var(--red-soft);color:var(--red)}
+.due.now{background:var(--amber-soft);color:var(--amber)}
+.due.soon{background:var(--navy-soft);color:var(--navy)}
+.due.done{background:var(--green-soft);color:var(--green)}
+.tag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:6px;margin-left:4px}
+.tag.on{background:var(--green-soft);color:var(--green)}
+.tag.wait{background:var(--amber-soft);color:var(--amber)}
+.task[data-id]{cursor:pointer}
+.task[data-id]:hover{background:var(--paper)}
+.task.editing{background:var(--navy-soft)}
+.editor{display:grid;gap:12px;padding:12px 16px 16px;background:var(--navy-soft);border-top:1px dashed var(--line)}
+.eact{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.save.small{width:auto;font-size:15px;padding:10px 18px}
+.ghost.ok{color:var(--green);border-color:var(--green)}
+.confirm{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px;color:var(--red)}
+.confirm .yes{border:0;background:var(--red);color:var(--onaccent);font-weight:700;border-radius:10px;padding:8px 12px;cursor:pointer}
+details.done summary{cursor:pointer;padding:12px 16px;font-weight:600;color:var(--navy);font-size:14px}
+.empty{padding:18px 16px;color:var(--mut);font-size:14px}
+.call{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;padding:11px 16px;border-top:1px solid var(--line);align-items:center}
+.call .t{font-weight:600}
+.call .m{font-size:13px;color:var(--mut)}
+.wa{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--green-soft);color:var(--green);text-decoration:none;font-weight:700;font-size:13px}
+.crmh{padding:10px 16px 4px;font-size:13px;font-weight:700;color:var(--mut);letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--line)}
+
+/* week */
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.kpi{background:var(--paper);border-radius:10px;padding:10px;min-width:0}
+.kpi .v{font-size:22px;font-weight:700;line-height:1.1}
+.kpi .v small{font-size:13px;color:var(--mut);font-weight:600}
+.kpi .k{font-size:12px;color:var(--mut);font-weight:600;margin-top:3px}
+.chart{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;height:150px;position:relative;padding-top:6px}
+.chart .col{display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end;min-width:0}
+.chart .stick{width:70%;max-width:44px;border-radius:6px 6px 2px 2px;background:var(--amber)}
+.chart .stick.ok{background:var(--green)}
+.chart .stick.none{background:var(--line)}
+.chart .cv{font-size:12px;font-weight:700}
+.chart .cl{font-size:12px;color:var(--mut);font-weight:600}
+.chart .tline{position:absolute;left:0;right:0;border-top:1.5px dashed var(--mut)}
+.chart .tlab{position:absolute;right:0;font-size:11px;color:var(--mut);transform:translateY(-100%)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-top:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;color:var(--mut);font-weight:600;border-top:0}
+td.r,th.r{text-align:right}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--card);padding:11px 18px;border-radius:10px;font-weight:600;font-size:15px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+@media (max-width:560px){
+  .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .seg button{min-width:46px}
+  .item{grid-template-columns:1fr}
+  .item .seg,.item .step{justify-self:start}
+  .row2{grid-template-columns:1fr}
+  .tab{padding:8px 10px}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.signin{min-height:80vh;display:grid;place-items:center;padding:24px 16px}
+.signcard{max-width:420px;width:100%;text-align:left}
+.sync span{display:flex;gap:6px}
+.brand small#who{font-size:11px}
+</style>
+</head>
+<body>
+<div id="signin" class="signin" hidden>
+  <div class="panel pad signcard">
+    <div class="brand" style="font-size:22px">Gophers Tracker</div>
+    <p class="sub" style="margin:8px 0 18px">Günlük checklist, görevler ve haftalık 4-1-1. Veriler Gophers Realty OneDrive'ındaki Tracker Excel dosyasına yazılır.</p>
+    <button class="save" id="signinBtn" type="button">Microsoft ile giriş yap</button>
+    <p class="sub" style="margin:12px 0 0">Gophers Realty hesabını kullan.</p>
+  </div>
+</div>
+<div id="app" hidden>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Gophers Tracker<small id="todayLbl"></small><small id="who"></small></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabG" aria-selected="true">Günlük</button>
+      <button class="tab" role="tab" id="tabT" aria-selected="false">Görevler<span class="badge" id="lateBadge" hidden></span></button>
+      <button class="tab" role="tab" id="tabW" aria-selected="false">Hafta</button>
+    </div>
+    <div class="sync"><span id="syncLbl">Yükleniyor…</span><span><button id="syncBtn" type="button">Yenile</button><button id="signoutBtn" type="button" title="Çıkış yap">Çıkış</button></span></div>
+  </div>
+</header>
+<div id="banner" class="banner" hidden></div>
+
+<main id="viewG">
+  <div class="weekbar">
+    <button class="nav" id="wPrev" type="button" aria-label="Önceki hafta">‹</button>
+    <div class="days" id="days"></div>
+    <button class="nav" id="wNext" type="button" aria-label="Sonraki hafta">›</button>
+  </div>
+  <section class="panel pad score" aria-label="Günün skoru">
+    <div class="big num" id="scBig">–<small>/15</small></div>
+    <div class="meter">
+      <div class="bar"><i id="scBar"></i><b id="scTgt"></b></div>
+      <div class="sub"><span id="scDay"></span><span id="scNote"></span></div>
+    </div>
+  </section>
+  <section class="panel" id="checklist" aria-label="Günlük checklist"></section>
+  <section class="panel pad" style="display:grid;gap:12px">
+    <div class="f"><label for="notes">Not / MREA fikri</label><textarea id="notes" placeholder="Bugünün fikri ya da dikkat çeken bir şey"></textarea></div>
+    <div class="actions"><button class="ghost" id="fillY" type="button">Boş kalanları Y yap</button><span class="saved" id="savedLbl"></span></div>
+  </section>
+</main>
+
+<main id="viewT" hidden>
+  <section class="panel" aria-label="CRM bugün">
+    <div class="pad actions"><div><h2>CRM · Bugün</h2><div class="sub" id="crmSub">CRM'deki sonraki aksiyonlar</div></div><button class="ghost" id="crmRefresh" type="button">Yenile</button></div>
+    <div id="crmList"><div class="empty">CRM okunuyor…</div></div>
+    <div class="pad" style="padding-top:8px"><a class="ghost" id="crmLink" href="#" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">Görüşmeyi CRM Giriş'e kaydet ›</a></div>
+  </section>
+  <section class="panel pad" style="display:grid;gap:12px" aria-label="Yeni görev">
+    <h2>Yeni görev</h2>
+    <form id="taskForm" style="display:grid;gap:12px" autocomplete="off">
+      <div class="f"><label for="tTitle">Görev</label><input id="tTitle" required placeholder="Örn. Oran mülk sahibini fiyat için ara"></div>
+      <div class="f"><span class="lab">Kolon</span><div class="chips" id="tBucket"></div></div>
+      <div class="f"><span class="lab">Son tarih</span><div class="chips" id="tDueQ"></div><input id="tDue" type="date" aria-label="Son tarih" required></div>
+      <div class="row2">
+        <div class="f"><span class="lab">Öncelik</span><div class="chips" id="tPrio"></div></div>
+        <div class="f"><span class="lab">Kaynak</span><div class="chips" id="tSrc"></div></div>
+      </div>
+      <div class="f"><label for="tNotes">Not</label><input id="tNotes" placeholder="İsteğe bağlı"></div>
+      <button class="save" id="tSave" type="submit">Görevi ekle</button>
+      <p class="sub" style="margin:0">Görev en geç 1 saat içinde Planner'a düşer. Açık bir görevin üstüne dokunarak düzenle, tamamla ya da iptal et; değişiklik en geç 1 saat içinde Planner'a da işlenir. Planner'da tamamladığın görev burada kendiliğinden kapanır.</p>
+    </form>
+  </section>
+  <section class="panel" aria-label="Açık görevler">
+    <div class="pad actions"><h2>Açık görevler</h2><button class="ghost" id="tRefresh" type="button">Planner'dan yenile</button></div>
+    <div id="tList"></div>
+    <details class="done"><summary id="tDoneSum">Tamamlananlar</summary><div id="tDone"></div></details>
+  </section>
+</main>
+
+<main id="viewW" hidden>
+  <div class="weekbar">
+    <button class="nav" id="w2Prev" type="button" aria-label="Önceki hafta">‹</button>
+    <div style="flex:1;min-width:0;text-align:center"><div style="font-weight:700;font-size:17px" id="wTitle"></div><div class="sub" id="wSub"></div></div>
+    <button class="nav" id="w2Next" type="button" aria-label="Sonraki hafta">›</button>
+  </div>
+  <section class="panel pad" style="display:grid;gap:14px" aria-label="Haftalık skor kartı">
+    <h2>Skor kartı</h2>
+    <div class="kpis" id="kpis"></div>
+    <div class="chart" id="wChart" aria-label="Günlük skorlar"></div>
+  </section>
+  <section class="panel pad" style="display:grid;gap:12px" aria-label="4-1-1 girişleri">
+    <h2>Cumartesi 4-1-1</h2>
+    <div class="row2">
+      <div class="f"><label for="wWeight">Kilo (kg)</label><input id="wWeight" type="number" inputmode="decimal" step="0.1" min="0"></div>
+      <div class="f"><label for="wList">Alınan portföy</label><input id="wList" type="number" inputmode="numeric" step="1" min="0"></div>
+    </div>
+    <div class="f"><label for="wAction">Gelecek haftanın MREA aksiyonu</label><input id="wAction" placeholder="Tek, somut bir aksiyon"></div>
+    <div class="f"><label for="wNotes">Notlar</label><textarea id="wNotes"></textarea></div>
+    <span class="saved" id="wSaved"></span>
+  </section>
+  <section class="panel" aria-label="Geçmiş haftalar">
+    <div class="pad"><h2>Haftalar</h2></div>
+    <div class="tbl"><table><thead><tr><th>Hafta</th><th class="r">Ort. skor</th><th class="r">Temas</th><th class="r">Randevu</th><th class="r">Diyet</th><th class="r">Kilo</th></tr></thead><tbody id="wHist"></tbody></table></div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script src="ui.js"></script>
+<script src="data.js"></script>
+</body>
+</html>
