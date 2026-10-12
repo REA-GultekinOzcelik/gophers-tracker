@@ -2,7 +2,7 @@
 const CONFIG = window.GT_CONFIG;
 const DRIVE_ID = "b!y07j3zs0wUORORx62WJ844NU9RJFZu9JsXYsPHd-SIEociUqeJtSTq6ZENgXtiJP";
 const FILE_ID = "01HMEMOXW2WM52PZ5FIVEKHXHYQA3HN4SC";
-const CRM_URL = "https://claude.ai/artifact/NvSSw5HR1EvXfbNPJX4zZC";
+const CRM_URL = "crm.html";
 const BUCKETS = ["This Week (4-1-1)","MREA Actions","Monthly Cycle","Setup & Open Items"];
 const PRIOS = ["Urgent","Important","Medium","Low"];
 const SRCS = ["4-1-1","MREA Podcast","Monthly Cycle","Setup","Calendar","Client","Other"];
@@ -220,6 +220,9 @@ function wireTasks(){
     finally{ $("tSave").disabled = false; }
   });
   $("crmRefresh").onclick = () => loadCrm(true);
+  const openCrm = e => { if(e.target.closest(".wa")) return; const r = e.target.closest("[data-crm]"); if(r) location.href = "crm.html?c=" + encodeURIComponent(r.dataset.crm); };
+  $("crmList").addEventListener("click", openCrm);
+  $("crmList").addEventListener("keydown", e => { if(e.key === "Enter") openCrm(e); });
   $("tRefresh").onclick = async () => { banner(""); try{ await loadTasks(); renderT(); saveCache(); toast("Planner durumları güncellendi"); }catch(e){ showErr(e, "Görevler okunamadı"); } };
 }
 
@@ -251,7 +254,7 @@ function crmItems(head, rows){
 function waNum(s){ let d = String(s||"").replace(/\D/g,""); if(d.length === 10 && d[0] === "5") d = "90"+d; if(d.length === 11 && d.startsWith("05")) d = "9"+d; return (d.length === 12 && d.startsWith("905")) ? d : ""; }
 function crmRow(x){
   const lbl = x.dd === 0 ? ["Bugün","now"] : [`${-x.dd} gün geçti`, "late"], wa = waNum(x.t);
-  return `<div class="call"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(x.name)}${x.p?` <span class="tag ${POT[x.p]<=2?"wait":"on"}">${esc(x.p)}</span>`:""}</div><div class="m">${esc([x.na, x.rf].filter(Boolean).join(" · ")) || "Aksiyon tipi yok"}</div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;
+  return `<div class="call" data-crm="${esc(x.name)}" role="link" tabindex="0" style="cursor:pointer"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(x.name)}${x.p?` <span class="tag ${POT[x.p]<=2?"wait":"on"}">${esc(x.p)}</span>`:""}</div><div class="m">${esc([x.na, x.rf].filter(Boolean).join(" · ")) || "Aksiyon tipi yok"}</div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;
 }
 let crmAt = 0;
 async function loadCrm(force){

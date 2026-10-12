@@ -142,6 +142,7 @@ async function boot(){
   $("crmLink").href = CRM_URL;
   await msalApp.initialize();
   const rr = await msalApp.handleRedirectPromise().catch(e => { console.error(e); return null; });
+  if(rr && rr.state === "crm"){ location.replace("crm.html"); return; }
   S.account = (rr && rr.account) || msalApp.getAllAccounts()[0] || null;
   if(!S.account){ $("signin").hidden = false; $("app").hidden = true; $("signinBtn").onclick = () => msalApp.loginRedirect({scopes:SCOPES, prompt:"select_account"}); return; }
   msalApp.setActiveAccount(S.account);

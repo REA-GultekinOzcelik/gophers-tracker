@@ -186,6 +186,7 @@ td.r,th.r{text-align:right}
 </style>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.navlink{border:1px solid var(--line);background:var(--navy-soft);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);text-decoration:none;display:inline-flex;align-items:center}
 .signin{min-height:80vh;display:grid;place-items:center;padding:24px 16px}
 .signcard{max-width:420px;width:100%;text-align:left}
 .sync span{display:flex;gap:6px}
@@ -210,7 +211,7 @@ td.r,th.r{text-align:right}
       <button class="tab" role="tab" id="tabT" aria-selected="false">Görevler<span class="badge" id="lateBadge" hidden></span></button>
       <button class="tab" role="tab" id="tabW" aria-selected="false">Hafta</button>
     </div>
-    <div class="sync"><span id="syncLbl">Yükleniyor…</span><span><button id="syncBtn" type="button">Yenile</button><button id="signoutBtn" type="button" title="Çıkış yap">Çıkış</button></span></div>
+    <div class="sync"><span id="syncLbl">Yükleniyor…</span><span><a class="navlink" href="crm.html">CRM</a><button id="syncBtn" type="button">Yenile</button><button id="signoutBtn" type="button" title="Çıkış yap">Çıkış</button></span></div>
   </div>
 </header>
 <div id="banner" class="banner" hidden></div>
@@ -239,7 +240,7 @@ td.r,th.r{text-align:right}
   <section class="panel" aria-label="CRM bugün">
     <div class="pad actions"><div><h2>CRM · Bugün</h2><div class="sub" id="crmSub">CRM'deki sonraki aksiyonlar</div></div><button class="ghost" id="crmRefresh" type="button">Yenile</button></div>
     <div id="crmList"><div class="empty">CRM okunuyor…</div></div>
-    <div class="pad" style="padding-top:8px"><a class="ghost" id="crmLink" href="#" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none">Görüşmeyi CRM Giriş'e kaydet ›</a></div>
+    <div class="pad" style="padding-top:8px"><a class="ghost" id="crmLink" href="crm.html" style="display:inline-block;text-decoration:none">Görüşmeyi CRM'e kaydet ›</a></div>
   </section>
   <section class="panel pad" style="display:grid;gap:12px" aria-label="Yeni görev">
     <h2>Yeni görev</h2>

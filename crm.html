@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gophers CRM</title>
+<meta name="theme-color" content="#1F3864">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Gophers">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F6F9; --card:#FFFFFF; --ink:#16202E; --mut:#5E6878; --line:#DDE2EA;
+  --navy:#1F3864; --navy-soft:#E6ECF5; --red:#B40101; --red-soft:#FBE7E6;
+  --amber:#9A6200; --amber-soft:#FFF3D6; --green:#1E7B46; --green-soft:#E3F4EA;
+  --focus:#2F6FD6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#10151D; --card:#19202B; --ink:#E8ECF2; --mut:#9AA4B4; --line:#2A3342;
+    --navy:#8FB0E6; --navy-soft:#1E2A3D; --red:#FF6B5E; --red-soft:#3A1E1C;
+    --amber:#F0B44C; --amber-soft:#3A2E14; --green:#5CCB8A; --green-soft:#16301F; --focus:#7FA8F0;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#10151D; --card:#19202B; --ink:#E8ECF2; --mut:#9AA4B4; --line:#2A3342;
+  --navy:#8FB0E6; --navy-soft:#1E2A3D; --red:#FF6B5E; --red-soft:#3A1E1C;
+  --amber:#F0B44C; --amber-soft:#3A2E14; --green:#5CCB8A; --green-soft:#16301F; --focus:#7FA8F0;
+}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+.top-in{max-width:1180px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px}
+.brand{font-weight:700;font-size:18px;letter-spacing:-.01em;color:var(--navy);white-space:nowrap}
+.brand small{display:block;font-weight:500;font-size:12px;color:var(--mut);letter-spacing:0}
+.tabs{display:flex;gap:4px;background:var(--paper);border-radius:10px;padding:3px;margin-left:auto}
+.tab{border:0;background:transparent;padding:8px 14px;border-radius:8px;font-weight:600;font-size:15px;color:var(--mut);cursor:pointer}
+.tab[aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.tab .badge{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:10px;background:var(--red);color:#fff;font-size:12px;line-height:20px;text-align:center}
+.sync{font-size:12px;color:var(--mut);white-space:nowrap}
+.sync button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;margin-left:6px}
+main{max-width:1180px;margin:0 auto;padding:16px}
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.search-wrap{padding:14px;border-bottom:1px solid var(--line);position:sticky;top:60px;background:var(--card);border-radius:14px 14px 0 0;z-index:2}
+.search{width:100%;font-size:18px;padding:13px 14px;border:1.5px solid var(--line);border-radius:11px;background:var(--paper)}
+.search:focus{border-color:var(--navy);background:var(--card);outline:none}
+.hint{font-size:13px;color:var(--mut);margin:8px 2px 0}
+.list{max-height:calc(100vh - 210px);overflow:auto}
+.person{display:block;width:100%;text-align:left;border:0;background:transparent;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.person:hover{background:var(--paper)}
+.person[aria-current="true"]{background:var(--navy-soft);box-shadow:inset 3px 0 0 var(--navy)}
+.person .nm{font-weight:600;font-size:16px}
+.person .sub{font-size:13px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pot{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:6px;margin-left:6px;vertical-align:2px}
+.pot-VIP,.pot-VeryHigh{background:var(--red-soft);color:var(--red)}
+.pot-High{background:var(--amber-soft);color:var(--amber)}
+.pot-Medium,.pot-Low{background:var(--navy-soft);color:var(--navy)}
+.newbtn{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--red-soft);color:var(--red);font-weight:600;padding:12px 14px;cursor:pointer;text-align:left}
+.empty{padding:22px 16px;color:var(--mut);font-size:14px}
+.form{padding:18px 18px 22px}
+.form h2{margin:0 0 2px;font-size:22px;letter-spacing:-.01em}
+.form .meta{color:var(--mut);font-size:14px;margin-bottom:12px}
+.hist{margin:4px 0 14px;border-left:2px solid var(--line);padding-left:12px}
+.hist-item{position:relative;padding:6px 0 8px 0;font-size:14px;border-bottom:1px dashed var(--line)}
+.hist-item .when{font-weight:600;font-size:13px;color:var(--navy)}
+.hist-item .what{color:var(--ink)}
+.hist-item .next{color:var(--mut);font-size:13px}
+.delwrap{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:4px;font-size:13px}
+.delwrap button{border:1px solid var(--line);background:transparent;color:var(--mut);cursor:pointer;font-size:13px;padding:4px 10px;border-radius:8px;min-height:32px}
+.delwrap .yes{background:#c0392b;border-color:#c0392b;color:#fff;font-weight:700}
+.delwrap .ask{color:#c0392b;font-weight:600}
+.hist-item .del:hover{color:var(--red);background:var(--red-soft)}
+.more-hist{border:0;background:transparent;color:var(--navy);font-weight:600;font-size:13px;cursor:pointer;padding:2px 0}
+fieldset{border:0;margin:0;padding:0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.f{margin-top:12px}
+.f label,.lab{display:block;font-size:13px;font-weight:600;color:var(--mut);margin-bottom:5px}
+.f input,.f textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:16px}
+.f input:focus,.f textarea:focus{border-color:var(--navy);outline:none}
+.f textarea{min-height:110px;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:500;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.chip.add{border-style:dashed;color:var(--mut)}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.del.armed{background:#c0392b!important;color:#fff!important;border-radius:6px;padding:2px 8px;font-weight:700;width:auto}
+.pastTag{margin-left:6px;padding:1px 8px;border-radius:999px;background:#fdecc8;color:#8a5a00;font-size:12px;font-weight:600}
+.chip.on-d{outline:2px solid currentColor}
+.warn{background:var(--amber-soft);color:var(--amber);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:8px}
+.warn button{border:0;background:transparent;color:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0;margin-left:4px}
+details.extra{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+details.extra summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:14px}
+.keep{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px;color:var(--mut)}
+.save{margin-top:18px;width:100%;border:0;border-radius:12px;background:var(--red);color:#fff;font-weight:700;font-size:18px;padding:15px;cursor:pointer}
+.save:disabled{opacity:.55;cursor:default}
+.ghost{border:0;background:transparent;color:var(--mut);font-weight:600;cursor:pointer;margin-top:10px;width:100%;padding:8px}
+.today-sec{padding:6px 0 4px}
+.today-sec h3{margin:0;padding:14px 16px 8px;font-size:15px;display:flex;align-items:baseline;gap:8px}
+.today-sec h3 .n{font-size:13px;color:var(--mut);font-weight:500}
+.call{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);cursor:pointer}
+.call:hover{background:var(--paper)}
+.due{font-size:12px;font-weight:700;border-radius:7px;padding:3px 8px;white-space:nowrap;text-align:center;min-width:84px}
+.due.late{background:var(--red-soft);color:var(--red)}
+.due.now{background:var(--amber-soft);color:var(--amber)}
+.due.soon{background:var(--navy-soft);color:var(--navy)}
+.call .nm{font-weight:600}
+.call .sub{font-size:13px;color:var(--mut)}
+.wa{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--green-soft);color:var(--green);text-decoration:none;font-weight:700;font-size:13px}
+.today-wrap{max-width:820px;margin:0 auto}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--card);padding:11px 18px;border-radius:10px;font-weight:600;font-size:15px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+.banner{max-width:1180px;margin:12px auto 0;padding:12px 16px;border-radius:10px;background:var(--amber-soft);color:var(--amber);font-size:14px}
+.tabs{overflow-x:auto;scrollbar-width:none}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+details.sec{border:1px solid var(--line);border-radius:12px;margin-top:12px;padding:4px 12px 12px;background:var(--card)}
+details.sec>summary{cursor:pointer;font-weight:700;color:var(--navy);padding:8px 0;font-size:15px}
+details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
+.f select{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font-size:16px}
+.f.comp output{display:block;padding:11px 12px;border-radius:10px;background:var(--navy-soft);color:var(--navy);font-weight:700}
+.inwrap{position:relative}
+.inwrap .suf{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:14px;pointer-events:none}
+.inwrap input{padding-right:30px}
+.f input[readonly]{background:var(--paper);color:var(--mut)}
+.linkcard{background:var(--green-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:14px;margin:4px 0 8px}
+.linkbtn{border:0;background:transparent;color:var(--navy);font-weight:700;cursor:pointer;padding:6px 0 0}
+.delrow{margin-top:10px}
+.otherin{border:1.5px solid var(--navy);border-radius:999px;padding:6px 12px;font-size:14px;width:150px}
+@media (max-width:820px){ .fgrid{grid-template-columns:1fr} .tab{padding:8px 10px;font-size:14px} }
+.hidden{display:none !important}
+.mobile-back{display:none}
+@media (max-width:820px){
+  .grid{grid-template-columns:1fr}
+  .top-in{flex-wrap:wrap;gap:8px}
+  .sync{order:3;width:100%;display:flex;justify-content:space-between;align-items:center}
+  .list{max-height:none}
+  .search-wrap{top:104px}
+  body.editing .left{display:none}
+  body:not(.editing) .right{display:none}
+  .mobile-back{display:inline-flex;border:0;background:transparent;color:var(--navy);font-weight:600;padding:0 0 10px;cursor:pointer}
+  .row{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+[hidden]{display:none!important}
+.sync .btns{display:inline-flex;gap:6px;align-items:center}
+.sync .btns button{margin-left:0}
+.navlink{border:1px solid var(--line);background:var(--navy-soft);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--navy);text-decoration:none}
+.signin{min-height:80vh;display:grid;place-items:center;padding:24px 16px}
+.signcard{max-width:420px;width:100%;padding:22px}
+.signcard p{color:var(--mut);font-size:14px}
+</style>
+</head>
+<body>
+<div id="signin" class="signin" hidden>
+  <div class="panel signcard">
+    <div class="brand" style="font-size:22px">Gophers CRM</div>
+    <p style="margin:8px 0 18px">Görüşme kaydı, bugünün aramaları, sözleşme, kira ve fırsat takibi. Kayıtlar Gophers Realty OneDrive'ındaki CRM Excel dosyasına yazılır.</p>
+    <button class="save" id="signinBtn" type="button">Microsoft ile giriş yap</button>
+    <p style="margin:12px 0 0">Gophers Realty hesabını kullan.</p>
+  </div>
+</div>
+<div id="app" hidden>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Gophers CRM<small id="todayLbl"></small></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabKayit" aria-selected="true">Kayıt</button>
+      <button class="tab" role="tab" id="tabBugun" aria-selected="false">Bugün<span class="badge hidden" id="bugunBadge"></span></button>
+      <button class="tab" role="tab" id="tabSoz" aria-selected="false">Sözleşme</button>
+      <button class="tab" role="tab" id="tabKira" aria-selected="false">Kira</button>
+      <button class="tab" role="tab" id="tabFirsat" aria-selected="false">Fırsat</button>
+    </div>
+    <div class="sync"><span id="syncLbl">Yükleniyor…</span><span class="btns"><a class="navlink" href="./">Tracker</a><button id="syncBtn" type="button">Yenile</button><button id="signoutBtn" type="button" title="Çıkış yap">Çıkış</button></span></div>
+  </div>
+</header>
+<div id="banner" class="banner hidden"></div>
+
+<main id="viewKayit">
+  <div class="grid">
+    <section class="panel left" aria-label="Kişi arama">
+      <div class="search-wrap">
+        <input id="q" class="search" type="search" placeholder="İsim, telefon ya da portföy yaz" autocomplete="off" aria-label="Kişi ara">
+        <p class="hint" id="qHint">Yazdıkça CRM'de arar.</p>
+      </div>
+      <button class="newbtn" id="newBtn" type="button">＋ <span id="newBtnTxt">Yeni kişi ekle</span></button>
+      <div class="list" id="results"></div>
+    </section>
+
+    <section class="panel right" aria-label="Görüşme kaydı">
+      <form class="form" id="form" autocomplete="off">
+        <button type="button" class="mobile-back" id="backBtn">‹ Listeye dön</button>
+        <h2 id="fTitle">Yeni kişi</h2>
+        <div class="meta" id="fMeta">Görüşmeyi kaydetmek için soldan kişiyi seç ya da yeni kişi bilgilerini gir.</div>
+        <div id="histBox"></div>
+
+        <div class="row">
+          <div class="f"><label for="n">Ad soyad</label><input id="n" required></div>
+          <div class="f"><label for="t">Telefon</label><input id="t" inputmode="tel"></div>
+        </div>
+        <div id="dupWarn" class="warn hidden"></div>
+
+        <div class="f"><span class="lab">Görüşme tarihi <span id="dPast" class="pastTag hidden">geçmiş tarih</span></span>
+          <div class="quick" id="dQuick"></div>
+          <input id="d" type="date" aria-label="Görüşme tarihi">
+        </div>
+
+        <div class="f"><span class="lab">Görüşme tipi</span><div class="chips" id="ctChips"></div></div>
+        <div class="f"><span class="lab">Kişi tipi</span><div class="chips" id="ktChips"></div></div>
+        <div class="f"><label for="rf">Referans / portföy</label><input id="rf" list="rfList"><datalist id="rfList"></datalist></div>
+        <div class="f"><label for="no">Görüşme notu</label><textarea id="no" required placeholder="Ne konuşuldu?"></textarea></div>
+        <div class="f"><span class="lab">Potansiyel</span><div class="chips" id="pChips"></div></div>
+
+        <div class="f"><span class="lab">Sonraki aksiyon tarihi</span>
+          <div class="quick" id="quick"></div>
+          <input id="nd" type="date" aria-label="Sonraki aksiyon tarihi">
+        </div>
+        <div class="f"><label for="na">Sonraki aksiyon</label><input id="na" placeholder="Örn. Randevu için ara"></div>
+
+        <details class="extra">
+          <summary>Diğer bilgiler</summary>
+          <div class="row">
+            <div class="f"><label for="em">E-posta</label><input id="em" type="email"></div>
+          </div>
+          <div class="row">
+            <div class="f"><label for="pb">Fiyat / bütçe</label><input id="pb"></div>
+            <div class="f"><label for="tf">Temas sıklığı</label><input id="tf" list="tfList"><datalist id="tfList"><option>Weekly</option><option>Bi-Weekly</option><option>Monthly</option><option>3 Months</option><option>Special Days</option></datalist></div>
+          </div>
+          <div class="f"><label for="ad">Adres</label><input id="ad"></div>
+        </details>
+
+        <label class="keep"><input type="checkbox" id="kN"> Takipten çıkar (Keep = N)</label>
+        <button class="save" id="saveBtn" type="submit">Kaydet</button>
+        <button class="ghost" id="clearBtn" type="button">Formu temizle</button>
+      </form>
+    </section>
+  </div>
+</main>
+
+<main id="viewBugun" class="hidden">
+  <div class="today-wrap" style="padding:10px 0 0;display:flex;justify-content:flex-end">
+    <span class="sync"><span id="leadImportLbl"></span></span>
+  </div>
+  <div class="today-wrap panel" id="todayBox"></div>
+</main>
+
+<main id="viewSoz" class="hidden">
+  <div class="grid">
+    <section class="panel left" aria-label="Sözleşme listesi">
+      <div class="search-wrap"><input id="sozQ" class="search" type="search" placeholder="ID, portföy ya da kişi ara" autocomplete="off" aria-label="Sözleşme ara"><p class="hint" id="sozHint"></p></div>
+      <button class="newbtn" id="sozNew" type="button">＋ Yeni sözleşme</button>
+      <div class="list" id="sozList"></div>
+    </section>
+    <section class="panel right" aria-label="Sözleşme formu"><form class="form" id="sozForm" autocomplete="off"></form></section>
+  </div>
+</main>
+
+<main id="viewKira" class="hidden">
+  <div class="grid">
+    <section class="panel left" aria-label="Kiralık mülkler">
+      <div class="search-wrap"><input id="kiraQ" class="search" type="search" placeholder="Mülk, mal sahibi ya da kiracı ara" autocomplete="off" aria-label="Kiralık ara"><p class="hint" id="kiraHint"></p></div>
+      <button class="newbtn" id="kiraNew" type="button">＋ Yeni kiralık mülk</button>
+      <div class="list" id="kiraList"></div>
+    </section>
+    <section class="panel right" aria-label="Kira takip formu"><form class="form" id="kiraForm" autocomplete="off"></form></section>
+  </div>
+</main>
+
+<main id="viewFirsat" class="hidden">
+  <div class="today-wrap" style="padding:10px 0 0"><div class="panel" id="firsatSummary" style="padding:12px 16px;margin-bottom:10px"></div></div>
+  <div class="grid">
+    <section class="panel left" aria-label="Fırsat listesi">
+      <div class="search-wrap"><input id="firsatQ" class="search" type="search" placeholder="İsim, tür ya da durum ara" autocomplete="off" aria-label="Fırsat ara"><p class="hint" id="firsatHint"></p></div>
+      <button class="newbtn" id="firsatNew" type="button">＋ Yeni fırsat</button>
+      <div class="list" id="firsatList"></div>
+    </section>
+    <section class="panel right" aria-label="Fırsat formu"><form class="form" id="firsatForm" autocomplete="off"></form></section>
+  </div>
+</main>
+<datalist id="contactNames"></datalist>
+<script type="application/json" id="schemaJson">{"secs": [{"k": "A", "n": "A — Temel Bilgiler"}, {"k": "B", "n": "B — İlan Bilgileri"}, {"k": "C", "n": "C — Satıcı / Mal Sahibi"}, {"k": "D", "n": "D — Alıcı / Kiracı"}, {"k": "E", "n": "E — Kefil, Ödeme & Kaparo"}, {"k": "F", "n": "F — Fiyat & Komisyon"}, {"k": "G", "n": "G — Tarihler"}, {"k": "H", "n": "H — Durum & Belgeler"}, {"k": "I", "n": "Kira Artışları"}, {"k": "J", "n": "Alıcı Emlakçısı"}, {"k": "K", "n": "Yönlendirme"}, {"k": "L", "n": "Komisyon Dağılımı & Ofis"}], "soz": [{"c": "A", "l": "ID", "s": "A", "t": "text"}, {"c": "B", "l": "Yıl", "s": "A", "t": "num"}, {"c": "C", "l": "Sözleşme Tarihi", "s": "A", "t": "date"}, {"c": "D", "l": "İşlem Türü", "s": "A", "t": "sel"}, {"c": "E", "l": "Portföy Adı / Proje", "s": "A", "t": "text"}, {"c": "F", "l": "Adres", "s": "A", "t": "text"}, {"c": "G", "l": "m² Brüt", "s": "A", "t": "num"}, {"c": "H", "l": "Oda", "s": "A", "t": "text"}, {"c": "I", "l": "İlana Çıkış", "s": "B", "t": "date"}, {"c": "J", "l": "Platform", "s": "B", "t": "text"}, {"c": "K", "l": "İlan No / URL", "s": "B", "t": "text"}, {"c": "L", "l": "İlan Fiyatı (₺)", "s": "B", "t": "money"}, {"c": "M", "l": "İlan Süresi (gün)", "s": "B", "t": "num"}, {"c": "N", "l": "Satıcı / Mal Sahibi", "s": "C", "t": "text"}, {"c": "O", "l": "Satıcı Tel", "s": "C", "t": "text"}, {"c": "P", "l": "Satıcı E-posta", "s": "C", "t": "text"}, {"c": "Q", "l": "Yönlendiren (Satıcı)", "s": "C", "t": "text"}, {"c": "R", "l": "Alıcı / Kiracı Adı", "s": "D", "t": "text"}, {"c": "S", "l": "Alıcı Tel", "s": "D", "t": "text"}, {"c": "T", "l": "Alıcı E-posta", "s": "D", "t": "text"}, {"c": "U", "l": "Meslek", "s": "D", "t": "text"}, {"c": "V", "l": "Yönlendiren (Alıcı)", "s": "D", "t": "text"}, {"c": "W", "l": "Kefil 1 Adı", "s": "E", "t": "text", "k": 1}, {"c": "X", "l": "Kefil 1 Tel", "s": "E", "t": "text", "k": 1}, {"c": "Y", "l": "Kefil 2 Adı", "s": "E", "t": "text", "k": 1}, {"c": "Z", "l": "Kefil 2 Tel", "s": "E", "t": "text", "k": 1}, {"c": "AA", "l": "Ödeme Yöntemi", "s": "E", "t": "text"}, {"c": "AB", "l": "Kaparo (₺) & Tarihi", "s": "E", "t": "text"}, {"c": "AC", "l": "Satış/Kira Fiyatı (₺)", "s": "F", "t": "money"}, {"c": "AD", "l": "Kom. % Satıcı", "s": "F", "t": "pct"}, {"c": "AE", "l": "Kom. % Alıcı", "s": "F", "t": "pct"}, {"c": "AF", "l": "KOMİSYON GELİRİ (₺)", "s": "F", "t": "comp"}, {"c": "AG", "l": "Gerç. %", "s": "F", "t": "pct"}, {"c": "AH", "l": "Tapu / Kira Sözleşmesi", "s": "G", "t": "date"}, {"c": "AI", "l": "Anahtar Teslim", "s": "G", "t": "date"}, {"c": "AJ", "l": "Kira Bitiş / Opsiyon", "s": "G", "t": "date", "k": 1}, {"c": "AK", "l": "DURUM", "s": "H", "t": "sel"}, {"c": "AL", "l": "📎 Cloud Belge Linki", "s": "H", "t": "text"}, {"c": "AM", "l": "1. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AN", "l": "2.Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AO", "l": "3. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AP", "l": "4. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AQ", "l": "5. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AR", "l": "6. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AS", "l": "7. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AT", "l": "8. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AU", "l": "9. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AV", "l": "10. Kira Artışı", "s": "I", "t": "money", "k": 1}, {"c": "AW", "l": "Alıcı Emlakçısı Adı", "s": "J", "t": "text"}, {"c": "AX", "l": "Alıcı Emlakçısı Ofis", "s": "J", "t": "text"}, {"c": "AY", "l": "Alıcı Emlakçısı Tel", "s": "J", "t": "text"}, {"c": "AZ", "l": "Alıcı Emlakçısı E-posta", "s": "J", "t": "text"}, {"c": "BA", "l": "Alıcı Emlakçısı Pay %", "s": "J", "t": "pct"}, {"c": "BB", "l": "Yönlendiren Adı (Satıcı)", "s": "K", "t": "text"}, {"c": "BC", "l": "Yönlendiren Ofis (Satıcı)", "s": "K", "t": "text"}, {"c": "BD", "l": "Yönlendiren Tel (Satıcı)", "s": "K", "t": "text"}, {"c": "BE", "l": "Yönlendiren Pay % (Satıcı)", "s": "K", "t": "pct"}, {"c": "BF", "l": "Yönlendiren Adı (Alıcı)", "s": "K", "t": "text"}, {"c": "BG", "l": "Yönlendiren Ofis (Alıcı)", "s": "K", "t": "text"}, {"c": "BH", "l": "Yönlendiren Tel (Alıcı)", "s": "K", "t": "text"}, {"c": "BI", "l": "Yönlendiren Pay % (Alıcı)", "s": "K", "t": "pct"}, {"c": "BJ", "l": "Brüt Komisyon (₺)", "s": "L", "t": "comp"}, {"c": "BK", "l": "Alıcı Emlakçı Ödemesi (₺)", "s": "L", "t": "comp"}, {"c": "BL", "l": "Yönlendirme Ödemesi S. (₺)", "s": "L", "t": "comp"}, {"c": "BM", "l": "Yönlendirme Ödemesi A. (₺)", "s": "L", "t": "comp"}, {"c": "BN", "l": "Toplam 3.Taraf Ödemeleri (₺)", "s": "L", "t": "comp"}, {"c": "BO", "l": "NET Komisyon - Bana Kalan (₺)", "s": "L", "t": "comp"}, {"c": "BP", "l": "Ofis Kesintisi % (varsayılan %30 elle değiştir)", "s": "L", "t": "pct"}, {"c": "BQ", "l": "Ofis Ödemesi (₺)", "s": "L", "t": "comp"}, {"c": "BR", "l": "SERBEST KALAN NET GELİR (₺)", "s": "L", "t": "comp"}], "kira": [{"c": "A", "l": "Portföy Adı", "t": "text"}, {"c": "B", "l": "Adres", "t": "text"}, {"c": "C", "l": "m²", "t": "num"}, {"c": "D", "l": "Mal Sahibi", "t": "text"}, {"c": "E", "l": "Mal Sah. Tel", "t": "text"}, {"c": "F", "l": "Kiracı 1 Adı", "t": "text"}, {"c": "G", "l": "Kiracı 1 Tel", "t": "text"}, {"c": "H", "l": "Kiracı 1 TC (Kimlik)", "t": "text"}, {"c": "I", "l": "Kiracı 1 Doğum", "t": "date"}, {"c": "J", "l": "Kiracı 2 Adı", "t": "text"}, {"c": "K", "l": "Kiracı 2 Tel", "t": "text"}, {"c": "L", "l": "Kefil Adı", "t": "text"}, {"c": "M", "l": "Kefil Tel", "t": "text"}, {"c": "N", "l": "Kefil TC", "t": "text"}, {"c": "O", "l": "Kefil İkametgah", "t": "text"}, {"c": "P", "l": "Kira (₺/ay)", "t": "money"}, {"c": "Q", "l": "Kira Başlangıç", "t": "date"}, {"c": "R", "l": "Kira Bitiş", "t": "date"}, {"c": "S", "l": "Depozito (₺)", "t": "money"}, {"c": "T", "l": "Durum", "t": "sel"}, {"c": "U", "l": "None", "t": "sel"}], "firsat": [{"c": "A", "l": "Ad Soyad / Lead", "t": "text"}, {"c": "B", "l": "Telefon", "t": "text"}, {"c": "C", "l": "Tür", "t": "sel"}, {"c": "D", "l": "Tahmini Değer (₺)", "t": "money"}, {"c": "E", "l": "Komisyon %", "t": "pct"}, {"c": "F", "l": "Tahmini Komisyon (₺)", "t": "comp"}, {"c": "G", "l": "Durum", "t": "sel"}, {"c": "H", "l": "Olasılık %", "t": "pct"}, {"c": "I", "l": "Ağırlıklı Gelir Tahmini (₺)", "t": "comp"}, {"c": "J", "l": "Beklenen Kapanış", "t": "date"}, {"c": "K", "l": "Not", "t": "text"}]}</script>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+<script src="msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="crm.js"></script>
+</body>
+</html>
