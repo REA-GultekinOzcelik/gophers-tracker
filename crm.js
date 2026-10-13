@@ -245,6 +245,55 @@ function planDue(skip){
   return {due:out, unplanned};
 }
 const PLAN_DAILY=12;
+// ---------- quick plan assignment for contacts without a plan ----------
+const QP=[["Monthly","Aylık"],["2 Months","2 ayda"],["3 Months","3 ayda"],["Special Days","Özel gün"],["DROP","Çıkar"]];
+function suggestPlan(c){
+  const p=c.p||"", kt=norm(c.kt), since=c.lastDate?-dayDiff(c.lastDate):999;
+  let plan;
+  if(["VIP","Very High","High"].includes(p)) plan="Monthly";
+  else if(p==="Medium") plan="2 Months";
+  else if(p==="Low") plan="3 Months";
+  else if(kt.includes("emlakci")) plan="3 Months";
+  else if(kt.includes("personal")) plan="2 Months";
+  else if(since<=180) plan="2 Months";
+  else plan="3 Months";
+  const sd = isForeignPhone(c.t||"") ? ["Noel","Thanksgiving"] : ["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"];
+  return {plan, sd};
+}
+function unplannedList(){
+  return [...S.contacts.values()].filter(c=>c.last.k!=="N" && !norm(c.last.na).includes("olumsuz") && !c.tf)
+    .sort((a,b)=>({"VIP":1,"Very High":2,"High":3,"Medium":4,"Low":5}[a.p]||6)-({"VIP":1,"Very High":2,"High":3,"Medium":4,"Low":5}[b.p]||6) || (b.lastDate||"").localeCompare(a.lastDate||""));
+}
+function renderQuickPlan(){
+  const list=unplannedList(), page=list.slice(0,20);
+  S.qp=S.qp||{};
+  $("todayBox").innerHTML=`<div class="today-sec"><h3>Hızlı plan atama<span class="n">${list.length} kişinin planı yok · 20'şer 20'şer</span></h3>
+    <p class="hint" style="margin:0 16px 8px">Her kişi için önerilen plan seçili geldi. Gerekirse değiştir, sonra en alttan kaydet. "Çıkar" kişiyi takipten çıkarır. Bayram ve yılbaşı mesajları da otomatik eklenir (yabancı numaralara Noel ve Thanksgiving).</p>
+    ${page.map(c=>{ const sg=S.qp[c.key]||suggestPlan(c).plan; return `<div class="call qprow" data-k="${esc(c.key)}" style="cursor:default"><span></span><div><div class="nm">${esc(c.name)}${c.p?`<span class="${potCls(c.p)}">${esc(c.p)}</span>`:""}</div><div class="sub">${esc([c.kt, c.rf, c.lastDate?("son temas "+tr(c.lastDate)):"temas yok"].filter(Boolean).join("  ·  "))}</div><div class="chips qpchips" style="margin-top:6px">${QP.map(([v,l])=>`<button type="button" class="chip" data-qp="${v}" aria-pressed="${v===sg}">${l}</button>`).join("")}</div></div><span></span></div>`; }).join("") || `<div class="empty">Planı olmayan kişi kalmadı. 👏</div>`}
+    <div class="qbtns" style="padding:12px 16px 16px">${page.length?`<button type="button" class="act ok" id="qpSave">Bu ${page.length} kişiyi kaydet</button>`:""}<button type="button" class="act" id="qpBack">Bugün'e dön</button></div></div>`;
+  S.qpPage=page.map(c=>c.key);
+}
+async function saveQuickPlan(){
+  const btn=$("qpSave"); btn.disabled=true; btn.textContent="Excel'e yazılıyor…";
+  try{
+    const head=S.crmHead, idx=S.crmIdx; if(!head) throw {code:"not_loaded"};
+    const recs=[];
+    for(const key of S.qpPage){
+      const c=S.contacts.get(key); if(!c) continue; const last=c.last||{};
+      const choice=S.qp[key]||suggestPlan(c).plan, sg=suggestPlan(c);
+      const base={d:todayISO(), by:"Gültekin", n:c.name, t:c.t, rf:c.rf, p:c.p, kt:c.kt, ct:"Plan", nd:last.nd||"", na:last.na||""};
+      recs.push(choice==="DROP" ? {...base, tf:"", k:"N", no:"Takipten çıkarıldı (toplu plan atama)"} : {...base, k:last.k||"Y", tf:formatTf(choice, sg.sd), no:"Dokunuş planı: "+planLabel(choice)+" (toplu atama)"});
+    }
+    const rows=recs.map(rec=>{ const vals=Array(head.length).fill(""); COLS.forEach(([k],j)=>{ const ix=idx[j]; if(ix<0) return; let v=rec[k]; if((k==="d"||k==="nd") && isISO(v)) v=serial(v); vals[ix]=cellIn(v); }); return vals; });
+    await graph(`${WB}/tables('CRM')/rows/add`,{method:"POST",body:{values:rows}});
+    let seq=S.rows.reduce((m,r)=>Math.max(m,r.seq||0),0);
+    recs.forEach(r=>{ Object.keys(r).forEach(k=>{ if(r[k]==="") delete r[k]; }); r.seq=++seq; r._id="new"+seq; S.rows.push(r); });
+    rebuild(); saveCache(); syncLbl();
+    toast(`${recs.length} kişinin planı kaydedildi`);
+    S.qp={}; renderQuickPlan();
+    loadCrm().then(()=>{ rebuild(); saveCache(); if(S.quickPlan) renderQuickPlan(); }).catch(()=>{});
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Planlar kaydedilemedi")); btn.disabled=false; btn.textContent="Tekrar dene"; }
+}
 function planRow(x){
   const c=x.c, wa=waNum(c.t);
   return `<div class="call" data-k="${esc(c.key)}" tabindex="0" role="button">
@@ -557,6 +606,7 @@ function callRow({ct,r,dd}){
   </div>`;
 }
 function renderToday(){
+  if(S.quickPlan){ renderQuickPlan(); return; }
   const {a,b,c}=buckets();
   const shown=new Set([...a,...b.slice(0,10),...c].map(x=>x.ct.key));
   const pd=planDue(shown);
@@ -574,7 +624,7 @@ function renderToday(){
     ogSec + pipeSec +
     (rem.length?`<div class="today-sec"><h3>Sözleşme & kira hatırlatmaları<span class="n">${rem.length} hatırlatma</span></h3>${rem.map(remRow).join("")}</div>`:"") +
     sec("Bugün ve son 7 gün",a) +
-    `<div class="today-sec"><h3>Dokunuş planı · sırası gelenler<span class="n">${Math.min(PLAN_DAILY,pd.due.length)} / ${pd.due.length} kişi</span></h3>${pd.due.slice(0,PLAN_DAILY).map(planRow).join("")||`<div class="empty">Bugün planı gelen kimse yok.</div>`}${pd.unplanned?`<div class="empty">Planı seçilmemiş ${pd.unplanned} kişi var. Kişiyi açıp "Dokunuş planı"ndan birini seç; sonra bu listeye kendiliğinden gelir.</div>`:""}</div>` +
+    `<div class="today-sec"><h3>Dokunuş planı · sırası gelenler<span class="n">${Math.min(PLAN_DAILY,pd.due.length)} / ${pd.due.length} kişi</span></h3>${pd.due.slice(0,PLAN_DAILY).map(planRow).join("")||`<div class="empty">Bugün planı gelen kimse yok.</div>`}${unplannedList().length?`<div class="empty">Planı seçilmemiş ${unplannedList().length} kişi var. <button type="button" class="act ok" id="qpOpen">Hızlı plan ata ›</button></div>`:""}</div>` +
     sec("Öncelikli birikmiş takip",b.slice(0,10),`ilk 10 · toplam ${b.length} birikmiş`) +
     sec("Önümüzdeki 7 gün",c) +
     leadSec;
@@ -1319,6 +1369,7 @@ function showView(v){
   const map={k:"viewKayit",b:"viewBugun",s:"viewSoz",r:"viewKira",p:"viewFirsat"}, tabs={k:"tabKayit",b:"tabBugun",s:"tabSoz",r:"tabKira",p:"tabFirsat"};
   for(const [key,id] of Object.entries(map)){ $(id).classList.toggle("hidden",key!==v); $(tabs[key]).setAttribute("aria-selected",key===v); }
   document.body.classList.remove("editing");
+  if(v!=="b") S.quickPlan=false;
   if(v==="b"){ renderToday(); if(!S.leadsAt || Date.now()-S.leadsAt>600000){ S.leadsAt=Date.now(); loadLeads(false); } }
   if(v==="s"){ renderModList("soz"); if(!S.modSel.soz) openMod("soz",null), document.body.classList.remove("editing"); }
   if(v==="r"){ renderModList("kira"); if(!S.modSel.kira) openMod("kira",null), document.body.classList.remove("editing"); }
@@ -1391,7 +1442,14 @@ function wire(){
     $(mod+"New").addEventListener("click",()=>openMod(mod,null));
     $(mod+"List").addEventListener("click",e=>{ const b=e.target.closest(".person"); if(b) openMod(mod,b.dataset.id); });
   }
-  $("todayBox").addEventListener("click",openFromToday);
+  $("todayBox").addEventListener("click",e=>{
+    if(e.target.id==="qpOpen"){ S.quickPlan=true; S.qp={}; renderQuickPlan(); window.scrollTo(0,0); return; }
+    if(e.target.id==="qpBack"){ S.quickPlan=false; renderToday(); return; }
+    if(e.target.id==="qpSave"){ saveQuickPlan(); return; }
+    const q=e.target.closest(".qpchips .chip"); if(q){ const row=q.closest(".qprow"); S.qp[row.dataset.k]=q.dataset.qp; row.querySelectorAll(".qpchips .chip").forEach(x=>x.setAttribute("aria-pressed",x===q)); return; }
+    if(e.target.closest(".qprow")) return;
+    openFromToday(e);
+  });
   $("todayBox").addEventListener("keydown",e=>{ if(e.key==="Enter") openFromToday(e); });
   buildChips(); renderResults(); renderToday();
 }
