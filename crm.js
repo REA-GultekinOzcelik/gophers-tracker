@@ -157,7 +157,115 @@ function topValues(field, fallback, n){
   const out=[]; [...fallback,...top].forEach(v=>{ if(v && !out.includes(v)) out.push(v); });
   return out.slice(0,n);
 }
+// ---------- Dokunuş planı (stored in the CRM "Touch Frequency" column) ----------
+const PLANS=[["8x8","8x8 · yeni tanışma"],["Weekly","Haftalık"],["Bi-Weekly","2 haftada bir"],["Monthly","Aylık"],["2 Months","2 ayda bir"],["3 Months","3 ayda bir"],["Special Days","Sadece özel günler"]];
+const PLAN_HINT={"8x8":"İlk 8 haftada her hafta bir dokunuş (8 dokunuş), sonra 2 ayda bir aramaya geçer.","Weekly":"Her hafta aranır.","Bi-Weekly":"2 haftada bir aranır.","Monthly":"Her ay aranır (A sınıfı).","2 Months":"2 ayda bir aranır (B sınıfı).","3 Months":"3 ayda bir aranır (C sınıfı).","Special Days":"Aranmaz; sadece doğum günü, yıldönümü ve bayramlarda dokunulur."};
+const planLabel=v=>(PLANS.find(p=>p[0]===v)||[v,v])[1];
+// special days a contact gets a message on. Kept in the same CRM cell: "<plan> + Special Days: a, b"
+// Religious holidays move every year: first days per Diyanet calendar (update each year)
+const RELIGIOUS={"Ramazan Bayramı":["2026-03-20","2027-03-09"],"Kurban Bayramı":["2026-05-27","2027-05-16"]};
+const SD=[
+  {id:"Doğum günü", own:true}, {id:"Ev alış yıldönümü", own:true}, {id:"Evlilik yıldönümü", own:true},
+  {id:"Ramazan Bayramı", msg:"Ramazan Bayramınız mübarek olsun. Sevdiklerinizle sağlık ve huzur dolu nice bayramlara."},
+  {id:"Kurban Bayramı", msg:"Kurban Bayramınız mübarek olsun. Sevdiklerinizle sağlık ve huzur dolu nice bayramlara."},
+  {id:"Yılbaşı", md:"01-01", msg:"Yeni yılınız kutlu olsun. Sağlık, huzur ve bereket dolu bir yıl dilerim."},
+  {id:"Cumhuriyet Bayramı", md:"10-29", msg:"Cumhuriyet Bayramımız kutlu olsun."},
+  {id:"Noel", md:"12-25", msg:"Merry Christmas and happy holidays to you and your family!"},
+  {id:"Thanksgiving", fn:y=>{ const d=new Date(y,10,1); const off=(4-d.getDay()+7)%7; return y+"-11-"+pad(1+off+21); }, msg:"Happy Thanksgiving to you and your family!"}
+];
+const SD_DEFAULT=["Doğum günü","Ev alış yıldönümü","Ramazan Bayramı","Kurban Bayramı","Yılbaşı"];   // old "Special Days" rows without a list
+function parseTf(tf){
+  const v=String(tf||"").trim(); if(!v) return {plan:"", sd:[]};
+  const m=v.match(/special days\s*:\s*(.*)$/i);
+  let plan=v.split("+")[0].trim(); if(/^special days/i.test(plan)) plan="Special Days";
+  let sd = m ? m[1].split(",").map(x=>x.trim()).filter(Boolean) : (/special days/i.test(v) ? SD_DEFAULT.slice() : []);
+  return {plan, sd};
+}
+function formatTf(plan, sd){
+  if(!sd.length) return plan;
+  if(!plan || plan==="Special Days") return "Special Days: "+sd.join(", ");
+  return plan+" + Special Days: "+sd.join(", ");
+}
+function sdNext(d){
+  const t=todayISO(), y=Number(t.slice(0,4));
+  const cands=[];
+  for(const yy of [y,y+1]){
+    if(d.md) cands.push(yy+"-"+d.md);
+    else if(d.fn) cands.push(d.fn(yy));
+    else if(RELIGIOUS[d.id]) RELIGIOUS[d.id].filter(x=>x.startsWith(String(yy))).forEach(x=>cands.push(x));
+  }
+  return cands.filter(x=>dayDiff(x)>=0).sort()[0]||"";
+}
+// holiday groups within `days`: who gets a message
+function holidaysUpcoming(days){
+  const out=[];
+  for(const d of SD){
+    if(d.own) continue;
+    const iso=sdNext(d); if(!iso) continue; const dd=dayDiff(iso); if(dd>days) continue;
+    const people=[...S.contacts.values()].filter(c=>c.last.k!=="N" && parseTf(c.tf).sd.includes(d.id));
+    if(people.length) out.push({d, iso, dd, people});
+  }
+  return out.sort((a,b)=>a.dd-b.dd);
+}
+function holidayHtml(h){
+  const [l,cls]=h.dd===0?["Bugün","now"]:[h.dd===1?"Yarın":h.dd+" gün sonra","soon"];
+  const text=h.d.msg+"\n\nGültekin";
+  return `<details class="hol"><summary class="call" style="cursor:pointer"><span class="due ${cls}">${l}</span><div><div class="nm">🎉 ${esc(h.d.id)}</div><div class="sub">${tr(h.iso)} · ${h.people.length} kişiye mesaj · listeyi aç</div></div><span></span></summary>
+    ${h.people.map(c=>{ const wa=waNum(c.t); return `<div class="call" data-k="${esc(c.key)}" data-hol="${esc(h.d.id)}" tabindex="0" role="button"><span></span><div><div class="nm">${esc(c.name)}</div><div class="sub">${esc(c.t||"telefon yok")}</div><div class="acts"><button type="button" class="act ok" data-act="holSent">✓ Gönderildi</button></div></div>${wa?`<a class="wa" href="https://wa.me/${wa}?text=${encodeURIComponent(text)}" target="_blank" rel="noopener" aria-label="WhatsApp mesajı">WA</a>`:`<span></span>`}</div>`; }).join("")}</details>`;
+}
+function planDays(tf){
+  const v=parseTf(tf).plan.toLowerCase();
+  if(!v || v.startsWith("special")) return 0;
+  if(v.includes("daily")||v.startsWith("weekly")) return 7;
+  if(v.startsWith("bi-weekly")) return 14;
+  if(v.startsWith("monthly")) return 30;
+  if(v.startsWith("2 month")) return 60;
+  if(v.startsWith("3 month")) return 90;
+  return 0;
+}
+// contacts whose plan says it is time to touch them again (and who have no explicit next action pending)
+function planDue(skip){
+  const out=[]; let unplanned=0;
+  for(const c of S.contacts.values()){
+    const r=c.last; if(r.k==="N" || norm(r.na).includes("olumsuz")) continue;
+    if(skip.has(c.key)) continue;
+    if(r.nd && dayDiff(r.nd)>=-7) continue;                      // explicit next action is pending / just due: other lists show it
+    const tf=c.tf||""; if(!tf){ unplanned++; continue; }
+    const since=c.lastDate?-dayDiff(c.lastDate):999;
+    let cad, tag;
+    if(/^8x8/i.test(parseTf(tf).plan)){
+      const first=c.recs.reduce((m,x)=>x.d && (!m||x.d<m)?x.d:m,"");
+      const el=first?-dayDiff(first):999;
+      if(el<=63 && c.recs.length<8){ cad=7; tag=`8x8 · ${c.recs.length}/8`; } else { cad=60; tag="8x8 bitti · 2 ayda"; }
+    } else { cad=planDays(tf); tag=planLabel(parseTf(tf).plan); }
+    if(!cad || since<cad) continue;
+    out.push({c, since, cad, tag, over:since/cad});
+  }
+  out.sort((x,y)=>x.cad-y.cad || y.over-x.over);
+  return {due:out, unplanned};
+}
+const PLAN_DAILY=12;
+function planRow(x){
+  const c=x.c, wa=waNum(c.t);
+  return `<div class="call" data-k="${esc(c.key)}" tabindex="0" role="button">
+    <span class="due ${x.over>=1.5?"late":"now"}">${esc(x.tag)}</span>
+    <div><div class="nm">${esc(c.name)}${c.p?`<span class="${potCls(c.p)}">${esc(c.p)}</span>`:""}</div>
+    <div class="sub">${esc([c.lastDate?("son temas "+x.since+" gün önce"):"hiç temas yok", c.rf].filter(Boolean).join("  ·  "))}</div>${actsHtml(false)}</div>
+    ${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:`<span></span>`}
+  </div>`;
+}
+function renderPlanChips(){
+  const {plan, sd}=parseTf($("tf").value);
+  const known=PLANS.some(p=>p[0]===plan);
+  $("tfChips").innerHTML=PLANS.map(([v,l])=>`<button type="button" class="chip" data-v="${esc(v)}" aria-pressed="${v===plan}">${esc(l)}</button>`).join("")+(plan && !known?`<button type="button" class="chip" data-v="${esc(plan)}" aria-pressed="true">${esc(plan)}</button>`:"");
+  $("tfHint").textContent = plan ? (PLAN_HINT[plan]||"Mevcut değer: "+plan) : "Plan seçilmedi: kişi sadece 'sonraki aksiyon tarihi' girersen listeye gelir.";
+  $("sdChips").innerHTML=SD.map(d=>`<button type="button" class="chip" data-sd="${esc(d.id)}" aria-pressed="${sd.includes(d.id)}">${esc(d.id)}</button>`).join("");
+  const c=S.sel?S.contacts.get(S.sel):null;
+  const missing=c?sd.filter(x=>SD.find(d=>d.id===x&&d.own) && !ogFor(c.key).some(o=>o.type===x)):[];
+  $("sdHint").textContent = missing.length ? `${missing.join(", ")} seçili ama tarihi girilmemiş; aşağıdaki "Önemli günler"den tarihini ekle.` : (sd.length?"Bu günlerde Bugün listesinde mesaj hatırlatması çıkar.":"Hiçbiri seçili değil.");
+}
 function buildChips(){
+  renderPlanChips();
   chipGroup("ctChips", topValues("ct",["Call In","Call Out","WhatsApp","Face to Face","E-mail"],8), "ct");
   chipGroup("ktChips", topValues("kt",["Alıcı","Satıcı","Alıcı/Satıcı","Personal Network","Emlakçı"],10), "kt", true);
   chipGroup("pChips", POTS, "p");
@@ -267,6 +375,7 @@ function clearForm(keepName){
   S.sel=null; S.histAll=false;
   const nm = keepName || "";
   ["n","t","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
+  setVal("tf","8x8");                                   // new people start on 8x8
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
@@ -352,6 +461,13 @@ function onAct(e){
   const b=e.target.closest("[data-act]"); if(!b) return false;
   e.preventDefault(); e.stopPropagation();
   const row=b.closest(".call"), box=row.querySelector(".acts"), a=b.dataset.act;
+  if(a==="holSent"){
+    const c=S.contacts.get(row.dataset.k); if(!c) return true; const last=c.last||{};
+    b.disabled=true;
+    addCrmRow({d:todayISO(), by:"Gültekin", n:c.name, t:c.t, rf:c.rf, p:c.p, kt:c.kt, tf:c.tf, ct:"WhatsApp", no:"🎉 "+row.dataset.hol+" mesajı gönderildi", k:last.k||"Y", nd:last.nd||"", na:last.na||""})
+      .then(()=>{ b.textContent="✓ Kaydedildi"; }).catch(err=>{ b.disabled=false; banner(errMsg(err,"Kaydedilemedi")); });
+    return true;
+  }
   if(a==="done"){
     box.innerHTML=`<div class="qa"><span class="lab">Sonraki aksiyon</span><div class="chips">${[["Yok",0],["3 gün",3],["1 hafta",7],["2 hafta",14],["1 ay",30]].map(([t,n],i)=>`<button type="button" class="chip" data-nd="${n}" aria-pressed="${i===0}">${t}</button>`).join("")}</div><input class="qnote" placeholder="Kısa not (isteğe bağlı)" aria-label="Kısa not"><div class="qbtns"><button type="button" class="act ok" data-act="doneSave">Kaydet</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div></div>`;
     setTimeout(()=>{ const i=box.querySelector(".qnote"); if(i) i.focus({preventScroll:true}); },30);
@@ -366,10 +482,16 @@ function onAct(e){
 }
 async function save(e){
   e.preventDefault();
-  const n=$("n").value.trim(), no=$("no").value.trim();
+  const n=$("n").value.trim(); let no=$("no").value.trim();
   if(!n){ $("n").focus(); toast("Ad soyad gerekli"); return; }
+  const cur=S.sel?S.contacts.get(S.sel):null, tfNow=$("tf").value.trim();
+  let carry=null;
+  if(!no && cur && tfNow!==(cur.tf||"")){            // only the plan changed: log it, keep the pending follow-up
+    const t=parseTf(tfNow); no="Dokunuş planı: "+(tfNow?[t.plan?planLabel(t.plan):"", t.sd.length?"özel günler: "+t.sd.join(", "):""].filter(Boolean).join(" · "):"kaldırıldı"); carry=cur.last||{};
+  }
   if(!no){ $("no").focus(); toast("Görüşme notu gerekli"); return; }
   const rec={d:$("d").value||todayISO(), by:"Gültekin", ct:S.ct, n, kt:S.kt, t:$("t").value.trim(), em:$("em").value.trim(), ad:$("ad").value.trim(), pb:$("pb").value.trim(), rf:$("rf").value.trim(), no, k:$("kN").checked?"N":"Y", tf:$("tf").value.trim(), p:S.p, nd:$("nd").value, na:$("na").value.trim()};
+  if(carry){ if(!rec.nd && carry.nd) rec.nd=carry.nd; if(!rec.na && carry.na) rec.na=carry.na; if(!S.ct) rec.ct="Plan"; }
   $("saveBtn").disabled=true; $("saveBtn").textContent="Excel'e yazılıyor…";
   try{
     await addCrmRow(rec);
@@ -436,20 +558,23 @@ function callRow({ct,r,dd}){
 }
 function renderToday(){
   const {a,b,c}=buckets();
+  const shown=new Set([...a,...b.slice(0,10),...c].map(x=>x.ct.key));
+  const pd=planDue(shown);
   const rem=sozReminders();
   const leads=todaysLeads();
-  const nb=a.length+rem.filter(r=>r.dd<=7).length+ogUpcoming(0).length;
+  const nb=a.length+Math.min(PLAN_DAILY,pd.due.length)+rem.filter(r=>r.dd<=7).length+ogUpcoming(0).length;
   const badge=$("bugunBadge"); if(nb){ badge.textContent=nb; badge.classList.remove("hidden"); } else badge.classList.add("hidden");
   const sec=(title,items,extra)=>`<div class="today-sec"><h3>${title}<span class="n">${extra||items.length+" kişi"}</span></h3>${items.map(callRow).join("")||`<div class="empty">Bu bölümde kimse yok.</div>`}</div>`;
   const leadSec=`<div class="today-sec"><h3>Bugün görüşülecek yeni adaylar<span class="n">${leads.length} kişi</span></h3>${leads.map(leadRow).join("")||`<div class="empty">Rehberden eklenecek yeni aday yok.</div>`}</div>`;
-  const ogs=ogUpcoming(7);
-  const ogSec = ogs.length ? `<div class="today-sec"><h3>Önemli günler<span class="n">önümüzdeki 7 gün · ${ogs.length}</span></h3>${ogs.map(ogRow).join("")}</div>` : "";
+  const ogs=ogUpcoming(7), hols=holidaysUpcoming(3);
+  const ogSec = (ogs.length||hols.length) ? `<div class="today-sec"><h3>Önemli günler<span class="n">önümüzdeki 7 gün · ${ogs.length+hols.length}</span></h3>${hols.map(holidayHtml).join("")}${ogs.map(ogRow).join("")}</div>` : "";
   const ft=firsatTotals();
   const pipeSec = ft.total ? `<div class="today-sec"><h3>Fırsat Pipeline'ı<span class="n">${ft.open} açık / ${ft.total} toplam</span></h3><div class="call" style="cursor:default"><span></span><div><div class="nm">Ağırlıklı gelir tahmini: ${fmtTL(ft.I)}</div><div class="sub">Toplam potansiyel komisyon: ${fmtTL(ft.F)}</div></div><span></span></div></div>` : "";
   $("todayBox").innerHTML =
     ogSec + pipeSec +
     (rem.length?`<div class="today-sec"><h3>Sözleşme & kira hatırlatmaları<span class="n">${rem.length} hatırlatma</span></h3>${rem.map(remRow).join("")}</div>`:"") +
     sec("Bugün ve son 7 gün",a) +
+    `<div class="today-sec"><h3>Dokunuş planı · sırası gelenler<span class="n">${Math.min(PLAN_DAILY,pd.due.length)} / ${pd.due.length} kişi</span></h3>${pd.due.slice(0,PLAN_DAILY).map(planRow).join("")||`<div class="empty">Bugün planı gelen kimse yok.</div>`}${pd.unplanned?`<div class="empty">Planı seçilmemiş ${pd.unplanned} kişi var. Kişiyi açıp "Dokunuş planı"ndan birini seç; sonra bu listeye kendiliğinden gelir.</div>`:""}</div>` +
     sec("Öncelikli birikmiş takip",b.slice(0,10),`ilk 10 · toplam ${b.length} birikmiş`) +
     sec("Önümüzdeki 7 gün",c) +
     leadSec;
@@ -1231,6 +1356,8 @@ function wire(){
     });
   }
   wireOg(); wireDocs();
+  $("tfChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); $("tf").value=formatTf(t.plan===b.dataset.v?"":b.dataset.v, t.sd); renderPlanChips(); });
+  $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
   $("histBox").addEventListener("click",e=>{
     const w=e.target.closest(".delwrap");
@@ -1254,7 +1381,7 @@ function wire(){
   $("signoutBtn").addEventListener("click",()=>msalApp.logoutRedirect({account:S.account, postLogoutRedirectUri:BASE+"crm.html"}));
   const show=showView;
   $("tabKayit").onclick=()=>show("k"); $("tabBugun").onclick=()=>show("b"); $("tabSoz").onclick=()=>show("s"); $("tabKira").onclick=()=>show("r"); $("tabFirsat").onclick=()=>show("p");
-  const openFromToday=e=>{ if(e.target.closest(".wa")) return; if(e.target.closest(".acts")){ if(e.type==="click") onAct(e); return; } const r=e.target.closest(".call"); if(!r) return;
+  const openFromToday=e=>{ if(e.target.closest(".wa")) return; if(e.target.closest("summary")) return; if(e.target.closest(".acts")){ if(e.type==="click") onAct(e); return; } const r=e.target.closest(".call"); if(!r) return;
     if(r.dataset.mod){ show(r.dataset.mod==="soz"?"s":"r"); openMod(r.dataset.mod,r.dataset.id); return; }
     if(r.dataset.lead){ show("k"); openLead(r.dataset.lead); return; }
     show("k"); selectContact(r.dataset.k); };
