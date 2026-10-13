@@ -1286,7 +1286,21 @@ async function refresh(manual){
     $("syncLbl").textContent="Excel okunamadı"; banner(errMsg(err,"Excel okunamadı"));
   }
 }
+
+// ---------- stale-version guard (iPhone home-screen apps keep old pages) ----------
+async function ensureFresh(page, scriptName){
+  try{
+    const cur=((document.querySelector(`script[src*="${scriptName}"]`)||{}).src||"").split("v=")[1]||"";
+    const html=await (await fetch(page+"?check="+Date.now(),{cache:"no-store"})).text();
+    const m=html.match(new RegExp(scriptName.replace(".","\\.")+"\\?v=(\\d+)"));
+    if(m && cur && m[1]!==cur){
+      const k="gx_reload_"+m[1]; if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,"1");
+      location.replace(location.pathname+"?v="+m[1]+location.hash);
+    }
+  }catch(_){}
+}
 async function boot(){
+  ensureFresh("crm.html","crm.js");
   await msalApp.initialize();
   const rr=await msalApp.handleRedirectPromise().catch(e=>{ console.error(e); return null; });
   S.account=(rr && rr.account) || msalApp.getAllAccounts()[0] || null;

@@ -135,7 +135,21 @@ async function refresh(){
   try{ await loadAll(); banner(""); const busy = document.activeElement && document.activeElement !== document.body; if(!busy) show(curTab()); else { renderDays(); renderScore(); renderT(); } loadCrm(false); }
   catch(e){ console.error(e); $("syncLbl").textContent = "Excel okunamadı"; showErr(e, "Excel okunamadı"); }
 }
+
+// ---------- stale-version guard (iPhone home-screen apps keep old pages) ----------
+async function ensureFresh(page, scriptName){
+  try{
+    const cur=((document.querySelector(`script[src*="${scriptName}"]`)||{}).src||"").split("v=")[1]||"";
+    const html=await (await fetch(page+"?check="+Date.now(),{cache:"no-store"})).text();
+    const m=html.match(new RegExp(scriptName.replace(".","\\.")+"\\?v=(\\d+)"));
+    if(m && cur && m[1]!==cur){
+      const k="gx_reload_"+m[1]; if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,"1");
+      location.replace(location.pathname+"?v="+m[1]+location.hash);
+    }
+  }catch(_){}
+}
 async function boot(){
+  ensureFresh("index.html","ui.js");
   const t = today(); S.sel = t; S.week = mondayOf(t); if(parseISO(t).getDay() === 0){ S.sel = addDaysISO(t,-1); S.week = mondayOf(S.sel); }
   S.wweek = S.week;
   $("todayLbl").textContent = new Date().toLocaleDateString("tr-TR", {weekday:"long", day:"numeric", month:"long"});
