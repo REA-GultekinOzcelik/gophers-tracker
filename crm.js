@@ -1207,7 +1207,7 @@ function wire(){
   $("q").addEventListener("input",renderResults);
   $("q").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const first=$("results").querySelector(".person"); if(first) selectContact(first.dataset.k); } });
   $("results").addEventListener("click",e=>{ const b=e.target.closest(".person"); if(!b) return; if(b.dataset.lead){ openLead(b.dataset.lead); return; } selectContact(b.dataset.k); });
-  $("newBtn").addEventListener("click",()=>{ const q=$("q").value.trim(); clearForm(/\d{4,}/.test(q)?"":q); if(/\d{4,}/.test(q)) setVal("t",q); document.body.classList.add("editing"); $(q && !/\d{4,}/.test(q)?"t":"n").focus(); });
+  $("newBtn").addEventListener("click",()=>{ const q=$("q").value.trim(); clearForm(/\d{4,}/.test(q)?"":q); if(/\d{4,}/.test(q)){ setVal("t",q); checkDup(); } document.body.classList.add("editing"); rehberSuggest(); $(q && !/\d{4,}/.test(q)?"t":"n").focus(); });
   $("backBtn").addEventListener("click",()=>document.body.classList.remove("editing"));
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
