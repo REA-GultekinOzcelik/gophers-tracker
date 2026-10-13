@@ -168,6 +168,7 @@ details.sec .cnt{font-weight:500;color:var(--mut);font-size:13px}
 details.hol>summary{list-style:none}
 details.hol>summary::-webkit-details-marker{display:none}
 details.hol[open]>summary{background:var(--paper)}
+.planbox{background:var(--navy-soft);border-radius:10px;padding:10px 12px 4px}
 .photobtn{background:var(--navy-soft);color:var(--navy);border-top:1px solid var(--line)}
 .filebtn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;width:max-content;margin-top:8px}
 .doclink{color:var(--navy);font-weight:600;word-break:break-word}
@@ -248,11 +249,11 @@ pre.ocr{white-space:pre-wrap;font-size:12px;color:var(--mut);background:var(--pa
 
         <div class="f"><span class="lab">Görüşme tipi</span><div class="chips" id="ctChips"></div></div>
         <div class="f"><span class="lab">Kişi tipi</span><div class="chips" id="ktChips"></div></div>
+        <div class="f planbox"><span class="lab">Dokunuş planı</span><div class="chips" id="tfChips"></div><p class="hint" id="tfHint"></p></div>
+        <div class="f"><span class="lab">Özel günler (birden fazla seçebilirsin)</span><div class="chips" id="sdChips"></div><p class="hint" id="sdHint"></p></div>
         <div class="f"><label for="rf">Referans / portföy</label><input id="rf" list="rfList"><datalist id="rfList"></datalist></div>
         <div class="f"><label for="no">Görüşme notu</label><textarea id="no" placeholder="Ne konuşuldu?"></textarea></div>
         <div class="f"><span class="lab">Potansiyel</span><div class="chips" id="pChips"></div></div>
-        <div class="f"><span class="lab">Dokunuş planı</span><div class="chips" id="tfChips"></div><p class="hint" id="tfHint"></p></div>
-        <div class="f"><span class="lab">Özel günler (birden fazla seçebilirsin)</span><div class="chips" id="sdChips"></div><p class="hint" id="sdHint"></p></div>
 
         <div class="f"><span class="lab">Sonraki aksiyon tarihi</span>
           <div class="quick" id="quick"></div>
@@ -325,7 +326,7 @@ pre.ocr{white-space:pre-wrap;font-size:12px;color:var(--mut);background:var(--pa
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
 <script src="msal-browser.min.js"></script>
-<script src="config.js?v=202610131937"></script>
-<script src="crm.js?v=202610131937"></script>
+<script src="config.js?v=202610131938"></script>
+<script src="crm.js?v=202610131938"></script>
 </body>
 </html>

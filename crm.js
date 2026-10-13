@@ -426,9 +426,10 @@ function clearForm(keepName){
   const nm = keepName || "";
   ["n","t","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
   setVal("tf",formatTf("8x8",["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"]));   // new people start on 8x8 + holidays
+  S.sdTouched=false;
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
-  $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
+  $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Bilgileri gir, dokunuş planını ve özel günleri seç (hazır önerildi), sonra kaydet. Doğum günü gibi tarihli günleri kayıttan sonra açılan \"Önemli günler\"den eklersin.";
   $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; $("rehSug").innerHTML=""; $("rehSug").hidden=true; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
   buildChips(); renderResults();
 }
@@ -1407,6 +1408,7 @@ function wire(){
   $("backBtn").addEventListener("click",()=>document.body.classList.remove("editing"));
   $("clearBtn").addEventListener("click",()=>clearForm());
   $("t").addEventListener("input",checkDup);
+  $("t").addEventListener("input",()=>{ if(S.sel || S.sdTouched) return; const t=parseTf($("tf").value); const sd=isForeignPhone($("t").value)?["Noel","Thanksgiving"]:["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"]; $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("n").addEventListener("input",()=>{ clearTimeout(S.sugT); S.sugT=setTimeout(rehberSuggest,200); });
   $("rehSug").addEventListener("click",e=>{ const b=e.target.closest("[data-fill]"); if(b) fillFromLead(b.dataset.fill); });
   $("dupWarn").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
@@ -1428,7 +1430,7 @@ function wire(){
   }
   wireOg(); wireDocs();
   $("tfChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); $("tf").value=formatTf(t.plan===b.dataset.v?"":b.dataset.v, t.sd); renderPlanChips(); });
-  $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
+  $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; S.sdTouched=true; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
   $("histBox").addEventListener("click",e=>{
     const w=e.target.closest(".delwrap");
