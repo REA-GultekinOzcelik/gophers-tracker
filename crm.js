@@ -406,6 +406,7 @@ function fillFromLead(id){
   const l=(S.leads||[]).find(x=>x.id===id); if(!l) return;
   setVal("n",l.name); setVal("t",l.phone1||l.phone2||l.phone3||"");
   if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · "));
+  if(isForeignPhone(l.phone1||"")){ setVal("tf",formatTf(parseTf($("tf").value).plan||"8x8",["Noel","Thanksgiving"])); renderPlanChips(); }
   $("fTitle").textContent=l.name; $("rehSug").innerHTML=""; $("rehSug").hidden=true; checkDup(); toast("Rehberden dolduruldu");
   setTimeout(()=>$("no").focus({preventScroll:true}),50);
 }
@@ -424,7 +425,7 @@ function clearForm(keepName){
   S.sel=null; S.histAll=false;
   const nm = keepName || "";
   ["n","t","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
-  setVal("tf","8x8");                                   // new people start on 8x8
+  setVal("tf",formatTf("8x8",["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"]));   // new people start on 8x8 + holidays
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Kayıtlı değilse bilgileri gir ve kaydet.";
@@ -501,15 +502,33 @@ async function quickAction(row, kind, opt){
 }
 function actsHtml(lead){
   return lead
-    ? `<div class="acts"><button type="button" class="act" data-act="drop">İlgisiz</button></div>`
+    ? `<div class="acts"><button type="button" class="act ok" data-act="leadAdd">＋ CRM'e ekle</button><button type="button" class="act" data-act="drop">İlgisiz</button></div>`
     : `<div class="acts"><button type="button" class="act ok" data-act="done">✓ Arandı</button><button type="button" class="act" data-act="drop">Takipten çıkar</button></div>`;
 }
 function onAct(e){
   const chip=e.target.closest(".qa .chip");
-  if(chip){ e.stopPropagation(); chip.parentNode.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c===chip)); return true; }
+  if(chip){ e.stopPropagation(); if(chip.dataset.ls){ chip.setAttribute("aria-pressed", chip.getAttribute("aria-pressed")!=="true"); return true; } chip.parentNode.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed", c===chip)); return true; }
   const b=e.target.closest("[data-act]"); if(!b) return false;
   e.preventDefault(); e.stopPropagation();
   const row=b.closest(".call"), box=row.querySelector(".acts"), a=b.dataset.act;
+  if(a==="leadAdd"){
+    const l=(S.leads||[]).find(x=>x.id===row.dataset.lead); if(!l) return true;
+    const sd=isForeignPhone(l.phone1||"")?["Noel","Thanksgiving"]:["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"];
+    box.innerHTML=`<div class="qa"><span class="lab">Dokunuş planı</span><div class="chips lp">${PLANS.map(([v,lab],i)=>`<button type="button" class="chip" data-lp="${esc(v)}" aria-pressed="${i===0}">${esc(lab)}</button>`).join("")}</div>
+      <span class="lab">Özel günler</span><div class="chips ls">${SD.filter(d=>!d.own).map(d=>`<button type="button" class="chip" data-ls="${esc(d.id)}" aria-pressed="${sd.includes(d.id)}">${esc(d.id)}</button>`).join("")}</div>
+      <input class="qnote" placeholder="Not (isteğe bağlı): örn. tanışma araması yapıldı" aria-label="Not"><div class="qbtns"><button type="button" class="act ok" data-act="leadSave">Kaydet</button><button type="button" class="act" data-act="cancel">Vazgeç</button></div></div>`;
+    return true;
+  }
+  if(a==="leadSave"){
+    const l=(S.leads||[]).find(x=>x.id===row.dataset.lead); if(!l) return true;
+    const plan=(box.querySelector('.lp .chip[aria-pressed="true"]')||{dataset:{}}).dataset.lp||"8x8";
+    const sd=[...box.querySelectorAll('.ls .chip[aria-pressed="true"]')].map(x=>x.dataset.ls);
+    const note=(box.querySelector(".qnote").value||"").trim();
+    row.querySelectorAll("button").forEach(x=>x.disabled=true);
+    addCrmRow({d:todayISO(), by:"Gültekin", n:l.name, t:l.phone1||l.phone2||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", ct:"Plan", tf:formatTf(plan, sd), k:"Y", no:note||("Rehberden CRM'e eklendi · dokunuş planı: "+planLabel(plan))})
+      .then(()=>toast(l.name+" CRM'e eklendi · "+planLabel(plan))).catch(err=>{ console.error(err); banner(errMsg(err,"Kaydedilemedi")); renderToday(); });
+    return true;
+  }
   if(a==="holSent"){
     const c=S.contacts.get(row.dataset.k); if(!c) return true; const last=c.last||{};
     b.disabled=true;
@@ -665,7 +684,8 @@ function openLead(id){
   setVal("em", l.email||"");
   setVal("rf", [l.org,l.title].filter(Boolean).join(" · "));
   $("fTitle").textContent=l.name;
-  $("fMeta").textContent="Rehberden yeni aday · henüz CRM'de kayıtlı değil.";
+  $("fMeta").textContent="Rehberden yeni aday · henüz CRM'de kayıtlı değil. Aşağıdan dokunuş planını ve özel günleri seç, sonra kaydet.";
+  if(isForeignPhone(l.phone1||"")){ setVal("tf",formatTf("8x8",["Noel","Thanksgiving"])); renderPlanChips(); }
   document.body.classList.add("editing");
   checkDup();
   setTimeout(()=>$("no").focus({preventScroll:true}),50);
