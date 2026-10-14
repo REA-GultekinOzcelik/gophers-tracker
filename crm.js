@@ -367,7 +367,7 @@ function renderResults(){
   // not (or not only) in CRM: look in the phone contacts exported to the Rehber folder
   const hits=q.trim().length>=2 ? rehberSearch(q) : [];
   if(hits.length){
-    $("results").insertAdjacentHTML("beforeend", `<div class="rehh">📇 Telefon rehberinde · ${hits.length}${hits.length>=8?"+":""}</div>` + hits.map(l=>`
+    $("results").insertAdjacentHTML("beforeend", `<div class="rehh">📇 Telefon rehberinde · ${hits.length}${hits.length>=25?"+":""}</div>` + hits.map(l=>`
     <button type="button" class="person rehp" data-lead="${esc(l.id)}">
       <div class="nm">${esc(l.name)}<span class="pot pot-Low">Rehber</span></div>
       <div class="sub">${esc([l.phone1, l.email, l.org].filter(Boolean).join("  ·  "))}</div>
@@ -387,7 +387,7 @@ function rehberSearch(q){
   for(const l of leads){
     if(S.contacts.has(norm(l.name))) continue;            // already in CRM under the same name
     const ok=(dq.length>=4 && digits([l.phone1,l.phone2,l.phone3].join(" ")).includes(dq)) || (toks.length && toks.every(t=>norm(l.name+" "+(l.org||"")+" "+(l.email||"")).includes(t)));
-    if(ok){ out.push(l); if(out.length>=8) break; }
+    if(ok){ out.push(l); if(out.length>=25) break; }
   }
   return out;
 }
