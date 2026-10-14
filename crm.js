@@ -655,7 +655,7 @@ function leadPool(){
   const used=new Set([...S.contacts.values()].map(c=>c.pk).filter(Boolean));
   return (S.leads||[]).filter(l=>{
     const pk=phoneKey(l.phone1||l.phone2||l.phone3||"");
-    return !pk || !used.has(pk);
+    return pk && !used.has(pk);                    // daily call candidates need a phone; email-only people stay searchable
   });
 }
 function todaysLeads(){
