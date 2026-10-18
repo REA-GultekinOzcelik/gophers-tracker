@@ -37,10 +37,11 @@ const startRow = addr => Number(addr.split("!")[1].match(/\d+/)[0]);
 async function loadDaily(){
   const r = await graph(`${WB}/tables/tblDaily/range?$select=address,values`);
   const s0 = startRow(r.address); S.rows.daily = {}; const daily = {};
+  S.dailyWidth = r.values[0].length; S.dailyLast = s0 + r.values.length - 1;
   r.values.slice(1).forEach((c, i) => {
     const iso = cellDate(c[0]); if(!iso) return; S.rows.daily[iso] = s0 + 1 + i;
     const o = {}; let any = false;
-    ITEMS.forEach((it, j) => { const v = c[2+j]; if(v !== "" && v !== null && v !== undefined){ o[it.k] = it.t ? Number(v) : String(v); any = true; } });
+    ITEMS.forEach(it => { const v = c[colIdx(it.col)]; if(v !== "" && v !== null && v !== undefined){ o[it.k] = it.t ? Number(v) : String(v); any = true; } });
     if(c[19] !== "" && c[19] != null){ o.notes = String(c[19]); any = true; }
     if(any) daily[iso] = o;
   });
@@ -74,8 +75,26 @@ async function loadTargets(){
 async function loadAll(){
   $("syncLbl").textContent = "Excel okunuyor…";
   await Promise.all([loadDaily(), loadWeekly(), loadTasks(), loadTargets()]);
+  if(await upgradeDaily()) await Promise.all([loadDaily(), loadTargets()]);
   $("syncLbl").textContent = "Excel güncel · " + hm(new Date());
   saveCache();
+}
+
+// ---------- one-time upgrade: 15 → 17 items (16 Sahibinden, 17 Endeksa) ----------
+const scoreFormula = r => `=IF(COUNTA(C${r}:R${r},U${r}:V${r})=0,"",COUNTIF(C${r}:D${r},"Y")+COUNTIF(C${r}:D${r},"N/A")+COUNTIF(G${r}:M${r},"Y")+COUNTIF(G${r}:M${r},"N/A")+COUNTIF(P${r}:R${r},"Y")+COUNTIF(P${r}:R${r},"N/A")+COUNTIF(U${r}:V${r},"Y")+COUNTIF(U${r}:V${r},"N/A")+IF(N(E${r})>=TouchTarget,1,0)+IF(N(F${r})>=1,1,0)+IF(AND(N${r}<>"",O${r}<>""),1,0))`;
+async function upgradeDaily(){
+  if((S.dailyWidth || 0) >= 22) return false;
+  $("syncLbl").textContent = "Excel yeni maddeler için güncelleniyor…";
+  for(let i = S.dailyWidth; i < 22; i++) await graph(`${WB}/tables/tblDaily/columns/add`, {method:"POST", body:{index:i, name:DAILY_EXTRA_HEADERS[i-20]}});
+  const top = ROWS_START, last = S.dailyLast;
+  await patchRange("DailyChecklist", `S${top-1}`, {values:[["Score (/17)"]]});
+  const f = []; for(let r = top; r <= last; r++) f.push([scoreFormula(r)]);
+  await patchRange("DailyChecklist", `S${top}:S${last}`, {formulas:f});
+  try{ await graph(`${WB}/worksheets('DailyChecklist')/range(address='U${top}:V${last}')/dataValidation`, {method:"PATCH", body:{rule:{list:{inCellDropDown:true, source:"=Lists!$D$5:$D$7"}}}}); }catch(_){}
+  try{ await patchRange("DailyChecklist", "A2", {values:[["Score 1 point per item. Y = done, N = not done, N/A = not scheduled today (counts as done). Touches/Appointments/Energy/Mood: enter numbers. Items 16-17 (Sahibinden, Endeksa) are in columns U-V. Target: 14+ of 17."]]}); }catch(_){}
+  try{ const t = await graph(`${WB}/worksheets('Lists')/range(address='G5')?$select=values`); if(Number(t.values[0][0]) === 12) await patchRange("Lists", "G5", {values:[[14]]}); }catch(_){}
+  try{ await patchRange("ReadMe", "B7", {values:[["17-item daily checklist, Mon–Sat (16 Sahibinden Listings, 17 Endeksa Alerts added 2026-10-18 in columns U-V). Key: Date. Score calculates automatically."]]}); }catch(_){}
+  return true;
 }
 
 // ---------- writers ----------
@@ -83,18 +102,19 @@ const patchRange = (sheet, addr, body) => graph(`${WB}/worksheets('${sheet}')/ra
 async function writeDay(iso){
   const v = S.daily[iso] || {};
   let r = S.rows.daily[iso];
-  if(!r){ await graph(`${WB}/tables/tblDaily/rows/add`, {method:"POST", body:{values:[[serial(iso)].concat(Array(19).fill(""))]}}); await loadDaily(); S.daily[iso] = v; r = S.rows.daily[iso];
+  if(!r){ await graph(`${WB}/tables/tblDaily/rows/add`, {method:"POST", body:{values:[[serial(iso)].concat(Array((S.dailyWidth || 22) - 1).fill(""))]}}); await loadDaily(); S.daily[iso] = v; r = S.rows.daily[iso];
     await patchRange("DailyChecklist", `B${r}`, {formulas:[[`=TEXT(A${r},"ddd")`]]});
-    await patchRange("DailyChecklist", `S${r}`, {formulas:[[`=IF(COUNTA(C${r}:R${r})=0,"",COUNTIF(C${r}:D${r},"Y")+COUNTIF(C${r}:D${r},"N/A")+COUNTIF(G${r}:M${r},"Y")+COUNTIF(G${r}:M${r},"N/A")+COUNTIF(P${r}:R${r},"Y")+COUNTIF(P${r}:R${r},"N/A")+IF(N(E${r})>=TouchTarget,1,0)+IF(N(F${r})>=1,1,0)+IF(AND(N${r}<>"",O${r}<>""),1,0))`]]}); }
-  await patchRange("DailyChecklist", `C${r}:R${r}`, {values:[ITEMS.map(it => v[it.k] === undefined ? "" : v[it.k])]});
-  await patchRange("DailyChecklist", `T${r}`, {values:[[v.notes || ""]]});
+    await patchRange("DailyChecklist", `S${r}`, {formulas:[[scoreFormula(r)]]}); }
+  const cell = it => v[it.k] === undefined ? "" : v[it.k];
+  await patchRange("DailyChecklist", `C${r}:R${r}`, {values:[CORE_ITEMS.map(cell)]});
+  await patchRange("DailyChecklist", `T${r}:V${r}`, {values:[[v.notes || ""].concat(EXTRA_ITEMS.map(cell))]});
 }
 async function writeWeek(mon){
   const w = S.weekly[mon] || {};
   let r = S.rows.weekly[mon];
   if(!r){ await graph(`${WB}/tables/tblWeekly/rows/add`, {method:"POST", body:{values:[[serial(mon)].concat(Array(9).fill(""))]}}); await loadWeekly(); S.weekly[mon] = w; r = S.rows.weekly[mon];
     const D = "tblDaily[Date]", A = `A${r}`;
-    await patchRange("Weekly", `C${r}:G${r}`, {formulas:[[`=SUMIFS(tblDaily[03 Touches ('#)],${D},">="&${A},${D},"<"&${A}+7)`, `=SUMIFS(tblDaily[04 Appointments ('#)],${D},">="&${A},${D},"<"&${A}+7)`, `=IFERROR(ROUND(AVERAGEIFS(tblDaily[Score (/15)],${D},">="&${A},${D},"<"&${A}+7),1),"")`, `=COUNTIFS(${D},">="&${A},${D},"<"&${A}+7,tblDaily[Score (/15)],">="&ScoreTarget)`, `=COUNTIFS(${D},">="&${A},${D},"<"&${A}+7,tblDaily[08 Diet & Water],"Y")`]]}); }
+    await patchRange("Weekly", `C${r}:G${r}`, {formulas:[[`=SUMIFS(tblDaily[03 Touches ('#)],${D},">="&${A},${D},"<"&${A}+7)`, `=SUMIFS(tblDaily[04 Appointments ('#)],${D},">="&${A},${D},"<"&${A}+7)`, `=IFERROR(ROUND(AVERAGEIFS(tblDaily[Score (/17)],${D},">="&${A},${D},"<"&${A}+7),1),"")`, `=COUNTIFS(${D},">="&${A},${D},"<"&${A}+7,tblDaily[Score (/17)],">="&ScoreTarget)`, `=COUNTIFS(${D},">="&${A},${D},"<"&${A}+7,tblDaily[08 Diet & Water],"Y")`]]}); }
   await patchRange("Weekly", `B${r}`, {values:[[w.weight ?? ""]]});
   await patchRange("Weekly", `H${r}:J${r}`, {values:[[w.listings ?? "", w.action || "", w.notes || ""]]});
 }
@@ -121,7 +141,7 @@ async function writeTask(t, patch){
 
 // ---------- local cache (instant start) ----------
 function saveCache(){ try{ localStorage.setItem("gt_cache", JSON.stringify({daily:S.daily, weekly:S.weekly, tasks:[...S.tasks.values()], TT:S.TT, ST:S.ST, at:Date.now()})); }catch(_){} }
-function loadCache(){ try{ const c = JSON.parse(localStorage.getItem("gt_cache") || "null"); if(!c) return false; S.daily = c.daily || {}; S.weekly = c.weekly || {}; S.tasks = new Map((c.tasks || []).map(t => [t.TaskID, t])); S.TT = c.TT || 20; S.ST = c.ST || 12; return true; }catch(_){ return false; } }
+function loadCache(){ try{ const c = JSON.parse(localStorage.getItem("gt_cache") || "null"); if(!c) return false; S.daily = c.daily || {}; S.weekly = c.weekly || {}; S.tasks = new Map((c.tasks || []).map(t => [t.TaskID, t])); S.TT = c.TT || 20; S.ST = c.ST || 14; return true; }catch(_){ return false; } }
 
 // ---------- boot ----------
 function show(v){

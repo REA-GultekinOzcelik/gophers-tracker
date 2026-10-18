@@ -12,7 +12,7 @@ const SRCS = ["4-1-1","MREA Podcast","Monthly Cycle","Setup","Calendar","Client"
 const DOW_TR = ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"];
 const MON_TR = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
 const GROUPS = [["is","İş · lead üretimi"],["beden","Beden"],["zihin","Zihin ve denge"]];
-const S = {account:null, tasks:new Map(), daily:{}, weekly:{}, rows:{daily:{}, weekly:{}, tasks:{}}, TT:20, ST:12, sel:null, week:null, wweek:null, form:{area:"Work", bucket:WORK_BUCKETS[0], prio:"Important", src:"4-1-1"}, tFilter:"All"};
+const S = {account:null, tasks:new Map(), daily:{}, weekly:{}, rows:{daily:{}, weekly:{}, tasks:{}}, TT:20, ST:14, sel:null, week:null, wweek:null, form:{area:"Work", bucket:WORK_BUCKETS[0], prio:"Important", src:"4-1-1"}, tFilter:"All"};
 const $ = id => document.getElementById(id);
 const today = () => isoOf(new Date());
 const trShort = iso => { const d = parseISO(iso); return d.getDate()+" "+MON_TR[d.getMonth()]; };
@@ -56,10 +56,10 @@ function curDay(){ return S.daily[S.sel] || null; }
 function shownVal(k){ const r = curDay(); if(r) return r[k]; return naDefaults(S.sel)[k]; }
 function renderScore(){
   const r = curDay(), sc = dayScore(r, S.TT), d = parseISO(S.sel);
-  $("scBig").innerHTML = `${sc===""?"–":sc}<small>/15</small>`;
-  const pct = sc === "" ? 0 : sc/15*100;
+  $("scBig").innerHTML = `${sc===""?"–":sc}<small>/${SCORE_MAX}</small>`;
+  const pct = sc === "" ? 0 : sc/SCORE_MAX*100;
   $("scBar").style.width = pct+"%"; $("scBar").className = sc !== "" && sc >= S.ST ? "ok" : "";
-  $("scTgt").style.left = (S.ST/15*100)+"%";
+  $("scTgt").style.left = (S.ST/SCORE_MAX*100)+"%";
   $("scDay").textContent = DOW_TR[d.getDay()]+" "+trShort(S.sel)+(S.sel===today()?" · bugün":"");
   $("scNote").textContent = sc === "" ? "Henüz giriş yok" : (sc >= S.ST ? "Hedef tuttu" : `Hedef ${S.ST}+ · ${S.ST - sc} puan kaldı`);
 }
@@ -370,10 +370,10 @@ function renderW(){
   $("wTitle").textContent = `${trShort(mon)} – ${trShort(sat)}`;
   $("wSub").textContent = mon === mondayOf(today()) ? "Bu hafta" : `${st.filled} gün girildi`;
   const k = (v,lab,extra="") => `<div class="kpi"><div class="v num">${v}${extra}</div><div class="k">${lab}</div></div>`;
-  $("kpis").innerHTML = k(st.touches,"Temas",`<small>/${S.TT*6}</small>`) + k(st.appts,"Randevu") + k(st.avg===""?"–":st.avg,"Ort. skor",`<small>/15</small>`) + k(st.hit,"Hedefte gün",`<small>/6</small>`) + k(st.diet,"Diyet günü",`<small>/6</small>`);
+  $("kpis").innerHTML = k(st.touches,"Temas",`<small>/${S.TT*6}</small>`) + k(st.appts,"Randevu") + k(st.avg===""?"–":st.avg,"Ort. skor",`<small>/${SCORE_MAX}</small>`) + k(st.hit,"Hedefte gün",`<small>/6</small>`) + k(st.diet,"Diyet günü",`<small>/6</small>`);
   const H = 120;
-  $("wChart").innerHTML = st.ds.map((d,i) => { const sc = st.scores[i], h = sc===""?4:Math.max(4, sc/15*H); return `<div class="col"><span class="cv num">${sc===""?"":sc}</span><div class="stick ${sc===""?"none":(sc>=S.ST?"ok":"")}" style="height:${h}px"></div><span class="cl">${DOW_TR[parseISO(d).getDay()]}</span></div>`; }).join("")
-    + `<div class="tline" style="bottom:${S.ST/15*H + 22}px"></div><div class="tlab" style="bottom:${S.ST/15*H + 22}px">hedef ${S.ST}</div>`;
+  $("wChart").innerHTML = st.ds.map((d,i) => { const sc = st.scores[i], h = sc===""?4:Math.max(4, sc/SCORE_MAX*H); return `<div class="col"><span class="cv num">${sc===""?"":sc}</span><div class="stick ${sc===""?"none":(sc>=S.ST?"ok":"")}" style="height:${h}px"></div><span class="cl">${DOW_TR[parseISO(d).getDay()]}</span></div>`; }).join("")
+    + `<div class="tline" style="bottom:${S.ST/SCORE_MAX*H + 22}px"></div><div class="tlab" style="bottom:${S.ST/SCORE_MAX*H + 22}px">hedef ${S.ST}</div>`;
   const w = S.weekly[mon] || {};
   $("wWeight").value = w.weight ?? ""; $("wList").value = w.listings ?? ""; $("wAction").value = w.action || ""; $("wNotes").value = w.notes || "";
   $("wSaved").textContent = "";

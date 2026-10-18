@@ -6,6 +6,8 @@ const ITEMS = [
   {k:"appt", col:"F", n:"04", l:"Appointments", h:"Kaç randevu", g:"is", t:"num"},
   {k:"i05", col:"G", n:"05", l:"Follow-up & CRM", h:"Takipler yapıldı, CRM güncel", g:"is"},
   {k:"i06", col:"H", n:"06", l:"USA Window", h:"18:00–19:00 ABD dokunuş penceresi", g:"is"},
+  {k:"i16", col:"U", n:"16", l:"Sahibinden Listings", h:"Sahibinden ilanları kontrol edildi", g:"is"},
+  {k:"i17", col:"V", n:"17", l:"Endeksa Alerts", h:"Endeksa alarmları incelendi", g:"is"},
   {k:"i07", col:"I", n:"07", l:"Movement", h:"Yürüyüş ya da gym", g:"beden"},
   {k:"i08", col:"J", n:"08", l:"Diet & Water", h:"Kahvaltı, öğle yok, son öğün 17:00, su", g:"beden"},
   {k:"i09", col:"K", n:"09", l:"Sleep", h:"23:30 yatak / 06:00 kalkış", g:"beden"},
@@ -18,6 +20,11 @@ const ITEMS = [
   {k:"i15", col:"R", n:"15", l:"White Space", h:"Planlı boş alan korundu", g:"zihin"}
 ];
 const YN_KEYS = ITEMS.filter(i => !i.t).map(i => i.k);
+const SCORE_MAX = YN_KEYS.length + 3;               // Y/N items + touches + appointments + energy/mood = 17
+const colIdx = c => c.charCodeAt(0) - 65;
+const CORE_ITEMS = ITEMS.filter(i => i.col <= "R").sort((a,b) => a.col < b.col ? -1 : 1);   // columns C..R
+const EXTRA_ITEMS = ITEMS.filter(i => i.col > "T").sort((a,b) => a.col < b.col ? -1 : 1);   // columns U..V
+const DAILY_EXTRA_HEADERS = ["16 Sahibinden Listings", "17 Endeksa Alerts"];
 const TASK_COLS = ["TaskID","CreatedDate","Title","Bucket","DueDate","Priority","Source","Notes","PlannerSynced","PlannerTaskID","Status","CompletedDate","PlannerUpdate"];
 
 const pad2 = n => String(n).padStart(2, "0");
