@@ -4,7 +4,7 @@ const DRIVE_ID = "b!y07j3zs0wUORORx62WJ844NU9RJFZu9JsXYsPHd-SIEociUqeJtSTq6ZENgX
 const FILE_ID = "01HMEMOXW2WM52PZ5FIVEKHXHYQA3HN4SC";
 const CRM_URL = "crm.html";
 const WORK_BUCKETS = ["This Week (4-1-1)","MREA Actions","Monthly Cycle","Setup & Open Items"];
-const PERSONAL_BUCKETS = ["Health & Fitness","Family","Lodge & Social","Motorcycle & Hobbies","Home"];
+const PERSONAL_BUCKETS = ["Health and Fitness","Family - Bulut","Lodge - Social","Motorcycles and Hobbies","Home"];
 const BUCKETS = WORK_BUCKETS.concat(PERSONAL_BUCKETS);
 const isPersonal = t => PERSONAL_BUCKETS.includes(t.Bucket);
 const PRIOS = ["Urgent","Important","Medium","Low"];
