@@ -191,7 +191,7 @@ function wireTaskList(){
   host.addEventListener("keydown", e => { if(e.key === "Enter" && e.target.matches(".task[data-id]")){ e.preventDefault(); e.target.click(); } });
 }
 function renderT(){
-  const all = [...S.tasks.values()].filter(t => !/^TEST/i.test(t.Title||""));
+  const all = [...S.tasks.values()].filter(t => !/^TEST - Selin/.test(t.Title||""));
   const f = S.tFilter, shown = all.filter(t => f === "All" || (f === "Personal") === isPersonal(t));
   $("tFilter").innerHTML = ["All","Work","Personal"].map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="${f===v}">${v} (${all.filter(t => !isClosed(t) && (v === "All" || (v === "Personal") === isPersonal(t))).length})</button>`).join("");
   const open = shown.filter(t => !isClosed(t)).sort((a,b) => (a.DueDate||"9").localeCompare(b.DueDate||"9"));
