@@ -3,13 +3,16 @@ const CONFIG = window.GT_CONFIG;
 const DRIVE_ID = "b!y07j3zs0wUORORx62WJ844NU9RJFZu9JsXYsPHd-SIEociUqeJtSTq6ZENgXtiJP";
 const FILE_ID = "01HMEMOXW2WM52PZ5FIVEKHXHYQA3HN4SC";
 const CRM_URL = "crm.html";
-const BUCKETS = ["This Week (4-1-1)","MREA Actions","Monthly Cycle","Setup & Open Items"];
+const WORK_BUCKETS = ["This Week (4-1-1)","MREA Actions","Monthly Cycle","Setup & Open Items"];
+const PERSONAL_BUCKETS = ["Health & Fitness","Family","Lodge & Social","Motorcycle & Hobbies","Home"];
+const BUCKETS = WORK_BUCKETS.concat(PERSONAL_BUCKETS);
+const isPersonal = t => PERSONAL_BUCKETS.includes(t.Bucket);
 const PRIOS = ["Urgent","Important","Medium","Low"];
-const SRCS = ["4-1-1","MREA Podcast","Monthly Cycle","Setup","Calendar","Client","Other"];
+const SRCS = ["4-1-1","MREA Podcast","Monthly Cycle","Setup","Calendar","Client","Personal","Other"];
 const DOW_TR = ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"];
 const MON_TR = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
 const GROUPS = [["is","İş · lead üretimi"],["beden","Beden"],["zihin","Zihin ve denge"]];
-const S = {account:null, tasks:new Map(), daily:{}, weekly:{}, rows:{daily:{}, weekly:{}, tasks:{}}, TT:20, ST:12, sel:null, week:null, wweek:null, form:{bucket:BUCKETS[0], prio:"Important", src:"4-1-1"}};
+const S = {account:null, tasks:new Map(), daily:{}, weekly:{}, rows:{daily:{}, weekly:{}, tasks:{}}, TT:20, ST:12, sel:null, week:null, wweek:null, form:{area:"Work", bucket:WORK_BUCKETS[0], prio:"Important", src:"4-1-1"}, tFilter:"All"};
 const $ = id => document.getElementById(id);
 const today = () => isoOf(new Date());
 const trShort = iso => { const d = parseISO(iso); return d.getDate()+" "+MON_TR[d.getMonth()]; };
@@ -140,7 +143,8 @@ function editorHTML(t){
   const closed = isClosed(t);
   return `<div class="editor" data-id="${esc(t.TaskID)}">
     <div class="f"><label for="eTitle">Görev</label><input id="eTitle" value="${esc(t.Title)}"></div>
-    <div class="f"><span class="lab">Kolon</span><div class="chips">${ch(BUCKETS, t.Bucket, "Bucket")}</div></div>
+    <div class="f"><span class="lab">Kolon · Work</span><div class="chips">${ch(WORK_BUCKETS, t.Bucket, "Bucket")}</div></div>
+    <div class="f"><span class="lab">Kolon · Personal</span><div class="chips">${ch(PERSONAL_BUCKETS, t.Bucket, "Bucket")}</div></div>
     <div class="row2"><div class="f"><label for="eDue">Son tarih</label><input id="eDue" type="date" value="${esc(t.DueDate||"")}"></div>
     <div class="f"><span class="lab">Öncelik</span><div class="chips">${ch(PRIOS, t.Priority, "Priority")}</div></div></div>
     <div class="f"><label for="eNotes">Not</label><input id="eNotes" value="${esc(t.Notes||"")}"></div>
@@ -154,7 +158,7 @@ function editorHTML(t){
 }
 function taskRow(t){
   const open = S.editId === t.TaskID;
-  return `<div class="task${open?" editing":""}" data-id="${esc(t.TaskID)}" tabindex="0" role="button" aria-expanded="${open}">${dueBadge(t)}<div class="t">${esc(t.Title)}</div><div class="m">${esc(t.Bucket)} · ${esc(t.Priority||"")}${syncTag(t)}${t.Notes?`<br>${esc(t.Notes)}`:""}</div></div>${open?editorHTML(t):""}`;
+  return `<div class="task${open?" editing":""}" data-id="${esc(t.TaskID)}" tabindex="0" role="button" aria-expanded="${open}">${dueBadge(t)}<div class="t">${esc(t.Title)}</div><div class="m">${isPersonal(t)?`<span class="tag pers">Personal</span> `:""}${esc(t.Bucket)} · ${esc(t.Priority||"")}${syncTag(t)}${t.Notes?`<br>${esc(t.Notes)}`:""}</div></div>${open?editorHTML(t):""}`;
 }
 async function saveTask(t, patch, msg){
   try{ await writeTask(t, patch); toast(msg); saveCache(); }
@@ -188,12 +192,14 @@ function wireTaskList(){
 }
 function renderT(){
   const all = [...S.tasks.values()].filter(t => !/^TEST/i.test(t.Title||""));
-  const open = all.filter(t => !isClosed(t)).sort((a,b) => (a.DueDate||"9").localeCompare(b.DueDate||"9"));
-  const done = all.filter(isClosed).sort((a,b) => (b.CompletedDate||"").localeCompare(a.CompletedDate||""));
+  const f = S.tFilter, shown = all.filter(t => f === "All" || (f === "Personal") === isPersonal(t));
+  $("tFilter").innerHTML = ["All","Work","Personal"].map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="${f===v}">${v} (${all.filter(t => !isClosed(t) && (v === "All" || (v === "Personal") === isPersonal(t))).length})</button>`).join("");
+  const open = shown.filter(t => !isClosed(t)).sort((a,b) => (a.DueDate||"9").localeCompare(b.DueDate||"9"));
+  const done = shown.filter(isClosed).sort((a,b) => (b.CompletedDate||"").localeCompare(a.CompletedDate||""));
   $("tList").innerHTML = open.length ? open.map(taskRow).join("") : `<div class="empty">Açık görev yok. Üstten ilk görevi ekle.</div>`;
   $("tDone").innerHTML = done.map(taskRow).join("") || `<div class="empty">Henüz tamamlanan görev yok.</div>`;
   $("tDoneSum").textContent = `Tamamlananlar (${done.length})`;
-  const late = open.filter(t => t.DueDate && t.DueDate < today()).length;
+  const late = all.filter(t => !isClosed(t) && t.DueDate && t.DueDate < today()).length;
   const nb = late + (S.crmDue || 0); $("lateBadge").hidden = !nb; $("lateBadge").textContent = nb;
 }
 function chipRow(id, list, key){
@@ -202,7 +208,10 @@ function chipRow(id, list, key){
 }
 function nextFriday(){ const d = new Date(); const add = (5 - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate()+add); return isoOf(d); }
 function wireTasks(){
-  chipRow("tBucket", BUCKETS, "bucket"); chipRow("tPrio", PRIOS, "prio"); chipRow("tSrc", SRCS, "src");
+  const areaRow = () => { $("tArea").innerHTML = ["Work","Personal"].map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="${S.form.area===v}">${v}</button>`).join(""); chipRow("tBucket", S.form.area === "Personal" ? PERSONAL_BUCKETS : WORK_BUCKETS, "bucket"); };
+  $("tArea").onclick = e => { const b = e.target.closest(".chip"); if(!b || b.dataset.v === S.form.area) return; S.form.area = b.dataset.v; S.form.bucket = (S.form.area === "Personal" ? PERSONAL_BUCKETS : WORK_BUCKETS)[0]; S.form.src = S.form.area === "Personal" ? "Personal" : "4-1-1"; areaRow(); chipRow("tSrc", SRCS, "src"); };
+  $("tFilter").onclick = e => { const b = e.target.closest(".chip"); if(!b) return; S.tFilter = b.dataset.v; renderT(); };
+  areaRow(); chipRow("tPrio", PRIOS, "prio"); chipRow("tSrc", SRCS, "src");
   const q = [["Bugün",()=>today()],["Yarın",()=>addDaysISO(today(),1)],["Cuma",nextFriday],["1 hafta",()=>addDaysISO(today(),7)]];
   $("tDueQ").innerHTML = q.map(([l],i) => `<button type="button" class="chip" data-i="${i}">${l}</button>`).join("");
   $("tDueQ").onclick = e => { const b = e.target.closest(".chip"); if(!b) return; $("tDue").value = q[Number(b.dataset.i)][1](); $("tDueQ").querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", x === b)); };
@@ -251,7 +260,7 @@ function crmItems(head, rows){
   out.b.sort((x,y) => (POT[x.p]||6) - (POT[y.p]||6) || y.dd - x.dd);
   return out;
 }
-function waNum(s){ let d = String(s||"").replace(/\D/g,""); if(d.length === 10 && d[0] === "5") d = "90"+d; if(d.length === 11 && d.startsWith("05")) d = "9"+d; return (d.length === 12 && d.startsWith("905")) ? d : ""; }
+function waNum(s){ for(const p of String(s||"").split(/\s*\|\s*|\s+-\s+|\s*[\/;,]\s*|\s+\+\s+/)){ let d = p.replace(/\D/g,""); if(d.startsWith("9005")) d = "90"+d.slice(3); if(d.length === 10 && d[0] === "5") d = "90"+d; if(d.length === 11 && d.startsWith("05")) d = "9"+d; if(d.length === 12 && d.startsWith("905")) return d; } return ""; }
 function crmRow(x){
   const lbl = x.dd === 0 ? ["Bugün","now"] : [`${-x.dd} gün geçti`, "late"], wa = waNum(x.t);
   return `<div class="call" data-crm="${esc(x.name)}" role="link" tabindex="0" style="cursor:pointer"><span class="due ${lbl[1]}">${lbl[0]}</span><div><div class="t">${esc(x.name)}${x.p?` <span class="tag ${POT[x.p]<=2?"wait":"on"}">${esc(x.p)}</span>`:""}</div><div class="m">${esc([x.na, x.rf].filter(Boolean).join(" · ")) || "Aksiyon tipi yok"}</div><div class="acts"><button type="button" class="act ok" data-act="done">✓ Arandı</button><button type="button" class="act" data-act="drop">Takipten çıkar</button></div></div>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:"<span></span>"}</div>`;

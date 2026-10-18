@@ -132,6 +132,7 @@ h2{margin:0;font-size:15px;font-weight:700;color:var(--navy);letter-spacing:.02e
 .due.now{background:var(--amber-soft);color:var(--amber)}
 .due.soon{background:var(--navy-soft);color:var(--navy)}
 .due.done{background:var(--green-soft);color:var(--green)}
+.tag.pers{background:var(--green-soft);color:var(--green);margin-left:0}
 .tag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:6px;margin-left:4px}
 .tag.on{background:var(--green-soft);color:var(--green)}
 .tag.wait{background:var(--amber-soft);color:var(--amber)}
@@ -255,6 +256,7 @@ td.r,th.r{text-align:right}
     <h2>Yeni görev</h2>
     <form id="taskForm" style="display:grid;gap:12px" autocomplete="off">
       <div class="f"><label for="tTitle">Görev</label><input id="tTitle" required placeholder="Örn. Oran mülk sahibini fiyat için ara"></div>
+      <div class="f"><span class="lab">Alan</span><div class="chips" id="tArea"></div></div>
       <div class="f"><span class="lab">Kolon</span><div class="chips" id="tBucket"></div></div>
       <div class="f"><span class="lab">Son tarih</span><div class="chips" id="tDueQ"></div><input id="tDue" type="date" aria-label="Son tarih" required></div>
       <div class="row2">
@@ -268,6 +270,7 @@ td.r,th.r{text-align:right}
   </section>
   <section class="panel" aria-label="Açık görevler">
     <div class="pad actions"><h2>Açık görevler</h2><button class="ghost" id="tRefresh" type="button">Planner'dan yenile</button></div>
+    <div class="pad chips" id="tFilter" style="padding-top:0"></div>
     <div id="tList"></div>
     <details class="done"><summary id="tDoneSum">Tamamlananlar</summary><div id="tDone"></div></details>
   </section>
@@ -302,9 +305,9 @@ td.r,th.r{text-align:right}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
 <script src="msal-browser.min.js"></script>
-<script src="config.js?v=202610140826"></script>
-<script src="common.js?v=202610140826"></script>
-<script src="ui.js?v=202610140826"></script>
-<script src="data.js?v=202610140826"></script>
+<script src="config.js?v=202610182016"></script>
+<script src="common.js?v=202610182016"></script>
+<script src="ui.js?v=202610182016"></script>
+<script src="data.js?v=202610182016"></script>
 </body>
 </html>

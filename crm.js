@@ -116,8 +116,14 @@ function dayDiff(iso){ if(!iso) return null; const [y,m,d]=iso.split("-").map(Nu
 function tr(iso){ if(!iso) return ""; const [y,m,d]=iso.split("-"); return d+"."+m+"."+y; }
 function norm(s){ return String(s||"").toLocaleLowerCase("tr").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ı/g,"i").replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim(); }
 function digits(s){ return String(s||"").replace(/\D/g,""); }
-function phoneKey(s){ const d=digits(s); return d.length>=10 ? d.slice(-10) : ""; }
-function waNum(s){ let d=digits(s); if(d.length===10 && d[0]==="5") d="90"+d; if(d.length===11 && d.startsWith("05")) d="9"+d; return (d.length===12 && d.startsWith("905")) ? d : ""; }
+// one Telephone cell may hold several numbers: "cep | ikinci" (primary first)
+function telParts(s){ const parts=String(s||"").split(/\s*\|\s*|\s+-\s+|\s*[\/;,]\s*|\s+\+\s+/).map(x=>x.trim()).filter(x=>digits(x).length>=7); return parts.length ? parts : (String(s||"").trim() ? [String(s).trim()] : []); }
+function trMobile(s){ let d=digits(s); if(d.startsWith("9005")) d="90"+d.slice(3); if(d.length===10 && d[0]==="5") d="90"+d; if(d.length===11 && d.startsWith("05")) d="9"+d; return (d.length===12 && d.startsWith("905")) ? d : ""; }
+function mobileFirst(arr){ return arr.slice().sort((a,b)=>(trMobile(b)?1:0)-(trMobile(a)?1:0)); }
+function phoneKey(s){ const p=mobileFirst(telParts(s))[0]||""; const d=digits(p); return d.length>=10 ? d.slice(-10) : ""; }
+function allPhoneKeys(s){ return telParts(s).map(p=>{ const d=digits(p); return d.length>=10 ? d.slice(-10) : ""; }).filter(Boolean); }
+function waNum(s){ for(const p of mobileFirst(telParts(s))){ const w=trMobile(p); if(w) return w; } return ""; }
+function joinTel(a,b){ return [a,b].map(x=>String(x||"").trim()).filter(Boolean).join(" | "); }
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function potCls(p){ return p ? "pot pot-"+p.replace(/\s/g,"") : ""; }
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("on"),2600); }
@@ -404,7 +410,7 @@ function rehberSuggest(){
 }
 function fillFromLead(id){
   const l=(S.leads||[]).find(x=>x.id===id); if(!l) return;
-  setVal("n",l.name); setVal("t",l.phone1||l.phone2||l.phone3||"");
+  setVal("n",l.name); setVal("t",l.phone1||l.phone2||l.phone3||""); setVal("t2",l.phone1?l.phone2:"");
   if(!$("em").value) setVal("em",l.email||""); if(!$("rf").value) setVal("rf",[l.org,l.title].filter(Boolean).join(" · "));
   if(isForeignPhone(l.phone1||"")){ setVal("tf",formatTf(parseTf($("tf").value).plan||"8x8",["Noel","Thanksgiving"])); renderPlanChips(); }
   $("fTitle").textContent=l.name; $("rehSug").innerHTML=""; $("rehSug").hidden=true; checkDup(); toast("Rehberden dolduruldu");
@@ -424,7 +430,7 @@ function setVal(id,v){ $(id).value=v||""; if(id==="d" && window.__markD) window.
 function clearForm(keepName){
   S.sel=null; S.histAll=false;
   const nm = keepName || "";
-  ["n","t","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
+  ["n","t","t2","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
   setVal("tf",formatTf("8x8",["Ramazan Bayramı","Kurban Bayramı","Yılbaşı"]));   // new people start on 8x8 + holidays
   S.sdTouched=false;
   setVal("n",nm); setVal("d",todayISO()); setVal("nd","");
@@ -436,7 +442,7 @@ function clearForm(keepName){
 function selectContact(key, focusNote=true){
   const c=S.contacts.get(key); if(!c) return;
   S.sel=key; S.histAll=false; S.ogOpen=false; S.docOpen=false; S.pendingPhoto=null;
-  setVal("n",c.name); setVal("t",c.t); setVal("rf",c.rf); setVal("em",c.em); setVal("tf",c.tf);
+  setVal("n",c.name); { const tp=mobileFirst(telParts(c.t)); setVal("t",tp[0]||""); setVal("t2",tp.slice(1).join(" | ")); } setVal("rf",c.rf); setVal("em",c.em); setVal("tf",c.tf);
   setVal("no",""); setVal("na",""); setVal("nd",""); setVal("pb",""); setVal("ad",""); setVal("d",todayISO());
   S.ct=""; S.kt=c.kt||""; S.p=c.p||""; $("kN").checked=false;
   $("fTitle").textContent=c.name;
@@ -495,7 +501,7 @@ async function quickAction(row, kind, opt){
       ? {...base, ct:"Call Out", no:opt.note||"Arandı", k:"Y", nd:opt.nd||"", na:opt.nd?(opt.na||"Takip"):""}
       : {...base, no:opt.note||"Takipten çıkarıldı (ilgisiz)", k:"N"};
   } else if(l){
-    rec={d:todayISO(), by:"Gültekin", n:l.name, t:l.phone1||l.phone2||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", no:"Rehber adayı: ilgisiz, listeden çıkarıldı", k:"N"};
+    rec={d:todayISO(), by:"Gültekin", n:l.name, t:joinTel(l.phone1,l.phone2)||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", no:"Rehber adayı: ilgisiz, listeden çıkarıldı", k:"N"};
   } else return;
   row.querySelectorAll("button").forEach(b=>b.disabled=true);
   try{ await addCrmRow(rec); toast(kind==="done"?(opt.nd?"Arandı · sonraki "+tr(opt.nd):"Arandı olarak kaydedildi"):"Listeden çıkarıldı"); }
@@ -526,7 +532,7 @@ function onAct(e){
     const sd=[...box.querySelectorAll('.ls .chip[aria-pressed="true"]')].map(x=>x.dataset.ls);
     const note=(box.querySelector(".qnote").value||"").trim();
     row.querySelectorAll("button").forEach(x=>x.disabled=true);
-    addCrmRow({d:todayISO(), by:"Gültekin", n:l.name, t:l.phone1||l.phone2||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", ct:"Plan", tf:formatTf(plan, sd), k:"Y", no:note||("Rehberden CRM'e eklendi · dokunuş planı: "+planLabel(plan))})
+    addCrmRow({d:todayISO(), by:"Gültekin", n:l.name, t:joinTel(l.phone1,l.phone2)||l.phone3||"", em:l.email, rf:[l.org,l.title].filter(Boolean).join(" · "), kt:"Rehber", ct:"Plan", tf:formatTf(plan, sd), k:"Y", no:note||("Rehberden CRM'e eklendi · dokunuş planı: "+planLabel(plan))})
       .then(()=>toast(l.name+" CRM'e eklendi · "+planLabel(plan))).catch(err=>{ console.error(err); banner(errMsg(err,"Kaydedilemedi")); renderToday(); });
     return true;
   }
@@ -559,7 +565,7 @@ async function save(e){
     const t=parseTf(tfNow); no="Dokunuş planı: "+(tfNow?[t.plan?planLabel(t.plan):"", t.sd.length?"özel günler: "+t.sd.join(", "):""].filter(Boolean).join(" · "):"kaldırıldı"); carry=cur.last||{};
   }
   if(!no){ $("no").focus(); toast("Görüşme notu gerekli"); return; }
-  const rec={d:$("d").value||todayISO(), by:"Gültekin", ct:S.ct, n, kt:S.kt, t:$("t").value.trim(), em:$("em").value.trim(), ad:$("ad").value.trim(), pb:$("pb").value.trim(), rf:$("rf").value.trim(), no, k:$("kN").checked?"N":"Y", tf:$("tf").value.trim(), p:S.p, nd:$("nd").value, na:$("na").value.trim()};
+  const rec={d:$("d").value||todayISO(), by:"Gültekin", ct:S.ct, n, kt:S.kt, t:joinTel($("t").value,$("t2").value), em:$("em").value.trim(), ad:$("ad").value.trim(), pb:$("pb").value.trim(), rf:$("rf").value.trim(), no, k:$("kN").checked?"N":"Y", tf:$("tf").value.trim(), p:S.p, nd:$("nd").value, na:$("na").value.trim()};
   if(carry){ if(!rec.nd && carry.nd) rec.nd=carry.nd; if(!rec.na && carry.na) rec.na=carry.na; if(!S.ct) rec.ct="Plan"; }
   $("saveBtn").disabled=true; $("saveBtn").textContent="Excel'e yazılıyor…";
   try{
@@ -652,10 +658,10 @@ function renderToday(){
 
 // ---------- new leads (Rehber) ----------
 function leadPool(){
-  const used=new Set([...S.contacts.values()].map(c=>c.pk).filter(Boolean));
+  const used=new Set(); for(const c of S.contacts.values()) for(const r of c.recs) allPhoneKeys(r.t).forEach(k=>used.add(k));
   return (S.leads||[]).filter(l=>{
-    const pk=phoneKey(l.phone1||l.phone2||l.phone3||"");
-    return pk && !used.has(pk);                    // daily call candidates need a phone; email-only people stay searchable
+    const ks=[l.phone1,l.phone2,l.phone3].map(p=>phoneKey(p)).filter(Boolean);
+    return ks.length && !ks.some(k=>used.has(k));                    // daily call candidates need a phone; email-only people stay searchable
   });
 }
 function todaysLeads(){
@@ -681,7 +687,7 @@ function leadRow(l){
 function openLead(id){
   const l=(S.leads||[]).find(x=>x.id===id); if(!l) return;
   clearForm(l.name);
-  setVal("t", l.phone1||l.phone2||l.phone3||"");
+  setVal("t", l.phone1||l.phone2||l.phone3||""); setVal("t2", l.phone1?l.phone2:"");
   setVal("em", l.email||"");
   setVal("rf", [l.org,l.title].filter(Boolean).join(" · "));
   $("fTitle").textContent=l.name;
@@ -714,7 +720,7 @@ function parseVCards(text){
     let name=vField(lines,"FN");
     if(!name){ const n=vField(lines,"N"); if(n){ const p=n.split(";"); name=[p[1],p[0]].filter(Boolean).join(" ").trim(); } }
     if(!name) continue;
-    const tels=vFieldAll(lines,"TEL").map(t=>t.trim()).filter(Boolean);
+    const tels=mobileFirst(vFieldAll(lines,"TEL").map(t=>t.trim()).filter(Boolean));
     const emails=vFieldAll(lines,"EMAIL").map(t=>t.trim()).filter(Boolean);
     const org=vField(lines,"ORG").replace(/;+$/,"").replace(/;/g," ").trim();
     const title=vField(lines,"TITLE").trim();
@@ -728,7 +734,7 @@ function parseVCards(text){
 // a new export dropped into the folder is picked up automatically the next time Bugün opens.
 async function loadLeads(force){
   const lbl=$("leadImportLbl");
-  let cache={files:{}}; try{ cache=JSON.parse(localStorage.getItem("gc_leads")||"null")||{files:{}}; }catch(_){}
+  let cache={files:{}}; try{ cache=JSON.parse(localStorage.getItem("gc_leads2")||"null")||{files:{}}; }catch(_){}
   S.leadsState="loading"; S.leadsErr="";
   try{
     if(lbl) lbl.textContent="Rehber kontrol ediliyor…";
@@ -746,7 +752,7 @@ async function loadLeads(force){
       next.files[f.id]={eTag:f.eTag, name:f.name, at:f.createdDateTime, cards:parseVCards(text).map(c=>[c.name,c.phones.slice(0,3),c.email,c.org,c.title])};
     }
     cache=next;
-    try{ localStorage.setItem("gc_leads", JSON.stringify(cache)); }catch(_){}
+    try{ localStorage.setItem("gc_leads2", JSON.stringify(cache)); }catch(_){}
   }catch(e){ console.error(e); if(e && e.code==="redirect") return; S.leadsErr=(e&&(e.message||e.code))||"bilinmeyen hata"; }
   S.leadFiles=Object.values(cache.files).map(f=>({name:f.name, at:f.at})).sort((a,b)=>String(a.at).localeCompare(String(b.at)));
   // build the lead list: one entry per phone, first file wins
@@ -1368,7 +1374,7 @@ async function photoContact(file){
     const {data}=await worker.recognize(cv); await worker.terminate();
     const p=parseCard(data.text||"");
     clearForm(p.name); S.pendingPhoto=file;
-    setVal("t",p.phone); setVal("em",p.email); setVal("rf",[p.org,p.title].filter(Boolean).join(" · "));
+    setVal("t",p.phone); setVal("t2",p.phone2||""); setVal("em",p.email); setVal("rf",[p.org,p.title].filter(Boolean).join(" · "));
     S.kt=""; buildChips();
     $("fTitle").textContent=p.name||"Fotoğraftan yeni kişi";
     $("fMeta").innerHTML=`Fotoğraftan okundu; bilgileri kontrol et, görüşme notunu yaz ve kaydet.${p.phone2?` İkinci telefon: <b>${esc(p.phone2)}</b>.`:""} <label class="keep" style="margin-top:6px"><input type="checkbox" id="photoKeep" checked> Fotoğrafı kişinin dokümanlarına ekle</label><details class="extra"><summary>Okunan metin</summary><pre class="ocr">${esc(p.raw)||"(metin bulunamadı)"}</pre></details>`;
