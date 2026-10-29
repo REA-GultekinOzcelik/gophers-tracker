@@ -1703,15 +1703,21 @@ function vStartSR(){
     sr.lang="tr-TR"; sr.continuous=true; sr.interimResults=true; sr.maxAlternatives=1;
     sr.onstart=()=>{ V.srOk=true; vUi(); };
     sr.onresult=e=>{
-      let interim="";
-      for(let i=e.resultIndex;i<e.results.length;i++){
+      // Oturumdaki tüm sonuçlardan metni baştan kur (iOS aynı cümleyi tekrar tekrar ve büyüyerek gönderebiliyor)
+      const fins=[]; let interim="";
+      for(let i=0;i<e.results.length;i++){
         const r=e.results[i], t=r[0].transcript.trim(); if(!t) continue;
-        if(r.isFinal) V.fin=(V.fin?V.fin+" ":"")+t; else interim+=(interim?" ":"")+t;
+        if(!r.isFinal){ interim=t; continue; }
+        const last=fins[fins.length-1];
+        if(last && t.startsWith(last)) fins[fins.length-1]=t; else if(last && last.startsWith(t)) {} else fins.push(t);
       }
+      const sess=fins.join(" ");
+      if(interim && sess && interim.startsWith(sess)) interim=interim.slice(sess.length).trim();
+      V.fin=[V.finPrev,sess].filter(Boolean).join(" ");
       vWrite(interim);
     };
     sr.onerror=e=>{ console.warn("SR",e.error); if(["not-allowed","service-not-allowed","audio-capture","language-not-supported","network"].includes(e.error)){ V.srFail=true; V.srOk=false; V.sr=null; vUi(); } };
-    sr.onend=()=>{ if(V.srOk||V.fin) vWrite(""); if(V.on && V.sr===sr){ try{ sr.start(); }catch(_){ } } };   // Chrome sessizlikte durur → devam et
+    sr.onend=()=>{ V.finPrev=V.fin; if(V.srOk||V.fin) vWrite(""); if(V.on && V.sr===sr){ try{ sr.start(); }catch(_){ } } };   // Chrome sessizlikte durur → devam et
     sr.start();
     setTimeout(()=>{ if(V.on && V.sr===sr && !V.srOk){ V.srFail=true; vUi(); } },4000);   // hiç başlamadıysa kullanıcıyı bilgilendir
   }catch(e){ console.warn(e); V.srFail=true; V.sr=null; vUi(); }
@@ -1719,10 +1725,10 @@ function vStartSR(){
 async function vStart(){
   if(V.on) return;
   banner("");
-  V.base=$("no").value.trim(); V.fin=""; V.chunks=[]; V.blob=null; V.dur=0; V.srOk=false; V.srFail=false;
+  V.base=$("no").value.trim(); V.fin=""; V.finPrev=""; V.chunks=[]; V.blob=null; V.dur=0; V.srOk=false; V.srFail=false;
   V.mime=vPickMime();
   let stream=null;
-  if(V.mime && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+  if(!SRClass && V.mime && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
     try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
     catch(e){ console.warn(e); if(!SRClass){ banner("Mikrofon izni verilmedi. Tarayıcı ayarlarından bu siteye mikrofon izni ver."); return; } }
   }
