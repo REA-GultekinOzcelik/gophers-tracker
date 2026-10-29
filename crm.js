@@ -428,6 +428,7 @@ function rehberByPhone(v){
 // ---------- form ----------
 function setVal(id,v){ $(id).value=v||""; if(id==="d" && window.__markD) window.__markD(); }
 function clearForm(keepName){
+  vReset();
   S.sel=null; S.histAll=false;
   const nm = keepName || "";
   ["n","t","t2","rf","no","na","em","pb","tf","ad"].forEach(i=>setVal(i,""));
@@ -441,6 +442,7 @@ function clearForm(keepName){
 }
 function selectContact(key, focusNote=true){
   const c=S.contacts.get(key); if(!c) return;
+  if(S.sel!==key) vReset();
   S.sel=key; S.histAll=false; S.ogOpen=false; S.docOpen=false; S.pendingPhoto=null;
   setVal("n",c.name); { const tp=mobileFirst(telParts(c.t)); setVal("t",tp[0]||""); setVal("t2",tp.slice(1).join(" | ")); } setVal("rf",c.rf); setVal("em",c.em); setVal("tf",c.tf);
   setVal("no",""); setVal("na",""); setVal("nd",""); setVal("pb",""); setVal("ad",""); setVal("d",todayISO());
@@ -557,6 +559,7 @@ function onAct(e){
 }
 async function save(e){
   e.preventDefault();
+  if(V.on){ await vStop(); }
   const n=$("n").value.trim(); let no=$("no").value.trim();
   if(!n){ $("n").focus(); toast("Ad soyad gerekli"); return; }
   const cur=S.sel?S.contacts.get(S.sel):null, tfNow=$("tf").value.trim();
@@ -573,6 +576,7 @@ async function save(e){
     const key=norm(n);
     toast("Kaydedildi");
     if(S.pendingPhoto) afterSavePhoto(n);
+    vAfterSave(n);
     $("q").value=""; selectContact(key,false); setVal("no",""); setVal("na",""); setVal("nd","");
   }catch(err){
     console.error(err); if(err && err.code==="redirect") return;
@@ -1404,6 +1408,132 @@ function showView(v){
   try{ localStorage.setItem("gc_tab", v); }catch(_){}
   window.scrollTo(0,0);
 }
+
+// ================= Sesli not (konuşma → yazı + ses kaydı OneDrive'a) =================
+// Mikrofona bas: Türkçe konuşma canlı olarak "Görüşme notu"na yazılır, aynı anda ses kaydı tutulur.
+// Kaydet'e basınca ses dosyası kişinin Dokümanlar klasörüne "Ses notu <tarih saat>" adıyla yüklenir.
+// "Profile çevir" eğitimdeki 4 parçalı komutu notla birlikte panoya kopyalar (Selin'e yapıştır).
+const V={on:false, rec:null, sr:null, chunks:[], blob:null, mime:"", t0:0, timer:null, base:"", fin:"", srOk:false, srFail:false, stopWait:null};
+const VMAX_MS=10*60*1000;
+const SRClass=window.SpeechRecognition||window.webkitSpeechRecognition;
+function vPickMime(){
+  if(!window.MediaRecorder) return "";
+  for(const m of ["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"]) if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+function vExt(m){ return /mp4/.test(m)?".m4a":/ogg/.test(m)?".ogg":".webm"; }
+function vClock(ms){ const s=Math.floor(ms/1000); return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
+function vUi(){
+  const b=$("vBtn"); if(!b) return;
+  b.classList.toggle("rec",V.on);
+  b.innerHTML=V.on?`⏹ Durdur <span id="vClock">${vClock(Date.now()-V.t0)}</span>`:"🎙 Sesli not";
+  b.setAttribute("aria-pressed",V.on?"true":"false");
+  $("vKeepWrap").hidden=!V.blob;
+  $("vProf").hidden=!$("no").value.trim();
+  const st=$("vState");
+  if(V.on) st.textContent=V.srOk?"Dinliyorum… konuştukça nota yazılıyor.":(V.srFail?"Ses kaydediliyor. Bu tarayıcı canlı yazıya çeviremiyor; notu klavyedeki 🎤 ile dikte edebilirsin.":"Mikrofon açılıyor…");
+  else if(V.blob) st.textContent=`Ses kaydı hazır (${vClock(V.dur||0)}, ${fmtSize(V.blob.size)}). Kaydet'e basınca OneDrive'a eklenir.`;
+  else st.textContent="";
+}
+function vWrite(interim){
+  const ta=$("no"); const txt=(V.fin+(interim?" "+interim:"")).trim();
+  ta.value=(V.base?V.base+(txt?"\n":""):"")+txt;
+  ta.scrollTop=ta.scrollHeight;
+}
+function vStartSR(){
+  if(!SRClass){ V.srFail=true; vUi(); return; }
+  try{
+    const sr=new SRClass(); V.sr=sr;
+    sr.lang="tr-TR"; sr.continuous=true; sr.interimResults=true; sr.maxAlternatives=1;
+    sr.onstart=()=>{ V.srOk=true; vUi(); };
+    sr.onresult=e=>{
+      let interim="";
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i], t=r[0].transcript.trim(); if(!t) continue;
+        if(r.isFinal) V.fin=(V.fin?V.fin+" ":"")+t; else interim+=(interim?" ":"")+t;
+      }
+      vWrite(interim);
+    };
+    sr.onerror=e=>{ console.warn("SR",e.error); if(["not-allowed","service-not-allowed","audio-capture","language-not-supported","network"].includes(e.error)){ V.srFail=true; V.srOk=false; V.sr=null; vUi(); } };
+    sr.onend=()=>{ if(V.srOk||V.fin) vWrite(""); if(V.on && V.sr===sr){ try{ sr.start(); }catch(_){ } } };   // Chrome sessizlikte durur → devam et
+    sr.start();
+    setTimeout(()=>{ if(V.on && V.sr===sr && !V.srOk){ V.srFail=true; vUi(); } },4000);   // hiç başlamadıysa kullanıcıyı bilgilendir
+  }catch(e){ console.warn(e); V.srFail=true; V.sr=null; vUi(); }
+}
+async function vStart(){
+  if(V.on) return;
+  banner("");
+  V.base=$("no").value.trim(); V.fin=""; V.chunks=[]; V.blob=null; V.dur=0; V.srOk=false; V.srFail=false;
+  V.mime=vPickMime();
+  let stream=null;
+  if(V.mime && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
+    catch(e){ console.warn(e); if(!SRClass){ banner("Mikrofon izni verilmedi. Tarayıcı ayarlarından bu siteye mikrofon izni ver."); return; } }
+  }
+  if(stream){
+    try{
+      const rec=new MediaRecorder(stream, V.mime?{mimeType:V.mime, audioBitsPerSecond:32000}:undefined); V.rec=rec;
+      rec.ondataavailable=e=>{ if(e.data && e.data.size) V.chunks.push(e.data); };
+      rec.onstop=()=>{ stream.getTracks().forEach(t=>t.stop()); V.blob=V.chunks.length?new Blob(V.chunks,{type:(rec.mimeType||V.mime||"audio/webm").split(";")[0]}):null; V.rec=null; vUi(); if(V.stopWait){ V.stopWait(); V.stopWait=null; } };
+      rec.start(1000);
+    }catch(e){ console.warn(e); stream.getTracks().forEach(t=>t.stop()); V.rec=null; }
+  }
+  if(!V.rec && !SRClass){ banner("Bu tarayıcı ses kaydını desteklemiyor. Notu klavyedeki 🎤 ile dikte edebilirsin."); return; }
+  V.on=true; V.t0=Date.now();
+  vStartSR();
+  V.timer=setInterval(()=>{ const c=$("vClock"); if(c) c.textContent=vClock(Date.now()-V.t0); if(Date.now()-V.t0>VMAX_MS){ toast("10 dakika doldu, kayıt durduruldu"); vStop(); } },500);
+  vUi();
+}
+function vStop(){
+  if(!V.on) return Promise.resolve();
+  V.on=false; V.dur=Date.now()-V.t0; clearInterval(V.timer);
+  const sr=V.sr; V.sr=null; if(sr){ try{ sr.stop(); }catch(_){ } }
+  if(V.srOk||V.fin) vWrite("");
+  const p=new Promise(res=>{ if(V.rec && V.rec.state!=="inactive"){ V.stopWait=res; try{ V.rec.stop(); }catch(_){ res(); } } else res(); });
+  vUi();
+  return p.then(()=>{ vUi(); });
+}
+function vReset(){
+  if(V.on){ V.on=false; clearInterval(V.timer); const sr=V.sr; V.sr=null; if(sr){ try{ sr.abort(); }catch(_){ } } if(V.rec && V.rec.state!=="inactive"){ V.stopWait=null; try{ V.rec.stop(); }catch(_){ } } }
+  V.blob=null; V.chunks=[]; V.fin=""; V.base=""; V.dur=0;
+  if($("vKeep")) $("vKeep").checked=true;
+  vUi();
+}
+async function vAfterSave(name){
+  const blob=V.blob, keep=$("vKeep") && $("vKeep").checked, mime=V.mime;
+  V.blob=null; vUi();
+  if(!blob || !keep) return;
+  try{
+    const d=new Date(), hm=String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0");
+    const folder=await ensureFolder(docPath("kisi",name));
+    await uploadFile(folder.id, blob, `Ses notu ${todayISO()} ${hm}${vExt(blob.type||mime)}`);
+    toast("Ses notu OneDrive'a eklendi"); renderDocs();
+  }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Ses notu yüklenemedi (not kaydedildi)")); }
+}
+function vProfilePrompt(){
+  const n=$("n").value.trim()||"(ad yok)", note=$("no").value.trim(); if(!note){ toast("Önce not gerekli"); return; }
+  const c=S.sel?S.contacts.get(S.sel):null;
+  const ctx=c?`${c.recs.length+1}. görüşme · daha önce kayıtlı kişi`:"İlk görüşme · yeni kişi";
+  const txt=`Selin, bu görüşme notunu İhtiyaç Profili'ne çevir.
+Bağlam: ${n} · ${ctx} · ${$("d").value||todayISO()}${$("rf").value.trim()?" · Referans/portföy: "+$("rf").value.trim():""}
+Sınır: Söylenmeyen bilgiyi uydurma; bilmediğini boş bırak; emin olmadığını "Teyit edilecek"e yaz.
+Çıktı: Beş Bilgi Grubu'na göre Alan: değer listesi, ardından eksikler ve teyit edilecekler. Kayıtlı profil varsa eski–yeni farkını da yaz.
+
+Not:
+${note}`;
+  const done=()=>toast("Komut panoya kopyalandı · Selin'e yapıştır");
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,()=>vCopyFallback(txt,done)); else vCopyFallback(txt,done);
+}
+function vCopyFallback(txt,done){ const t=document.createElement("textarea"); t.value=txt; t.setAttribute("readonly",""); t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.select(); try{ document.execCommand("copy"); done(); }catch(_){ banner("Kopyalanamadı"); } t.remove(); }
+function wireVoice(){
+  if(!$("vBtn")) return;
+  if(!SRClass && !(window.MediaRecorder && navigator.mediaDevices)){ $("vBtn").disabled=true; $("vState").textContent="Bu tarayıcı sesli notu desteklemiyor; klavyedeki 🎤 ile dikte edebilirsin."; }
+  $("vBtn").addEventListener("click",()=>{ V.on?vStop():vStart(); });
+  $("vProf").addEventListener("click",vProfilePrompt);
+  $("no").addEventListener("input",()=>{ if(!V.on) $("vProf").hidden=!$("no").value.trim(); });
+  vUi();
+}
+
 function wire(){
   $("todayLbl").textContent=new Date().toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long"});
   setVal("d",todayISO());
@@ -1434,7 +1564,7 @@ function wire(){
       }catch(e){ console.error(e); }
     });
   }
-  wireOg(); wireDocs();
+  wireOg(); wireDocs(); wireVoice();
   $("tfChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); $("tf").value=formatTf(t.plan===b.dataset.v?"":b.dataset.v, t.sd); renderPlanChips(); });
   $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; S.sdTouched=true; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
