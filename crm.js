@@ -1610,7 +1610,7 @@ function ihSummaryHtml(p, upd){
 function renderIhSum(){
   const box=$("ihSumBox"); if(!box) return;
   const hit=S.ihOrig && S.sel ? ihFind($("n").value.trim(), $("t").value) : null;
-  if(!S.ihOrig){ box.innerHTML=S.pm?`<div class="ihsum">${pmHtml()}</div>`:""; return; }
+  if(!S.ihOrig){ box.innerHTML=S.pm?`<div class="ihsum">${pmHtml()}</div>`:(S.pmErr?`<p class="hint">${esc(S.pmErr)}</p>`:""); return; }
   const upd=hit && hit.u ? tr(hit.u) : "";
   box.innerHTML=ihSummaryHtml(S.ihOrig, upd).replace(/<\/div>\s*$/, "")+matchListForContact(S.ihOrig)+pmHtml()+portalHtml(S.ihOrig)+"</div>";
 }
@@ -1989,15 +1989,26 @@ function renderRatesLbl(){ const r=rates(); $("pfRates").textContent=`Kur: USD $
 const PM_DIR="Portal Eşleşmeleri";
 const PM_DURUM=["Yeni","Gönderildi","Beğendi","Gösterim","İlgilenmedi"];
 S.pm=null; S.pmFor="";
-async function loadPm(name){
-  S.pm=null; S.pmFor=name; if(!name) return;
+async function pmFiles(){
+  if(S.pmList && Date.now()-S.pmListAt<60000) return S.pmList;
   try{
-    const it=await graph(`/drives/${DRIVE_ID}/items/${CRM_FOLDER_ID}:/${encPath([PM_DIR, safeName(name)+".json"])}?$select=id,@microsoft.graph.downloadUrl`);
-    const url=it["@microsoft.graph.downloadUrl"]; if(!url) return;
-    const res=await fetch(url,{cache:"no-store"}); if(!res.ok) return;
-    const j=await res.json(); if(S.pmFor!==name) return;
-    S.pm=j; S.pmId=it.id;
-  }catch(e){ if(!(e && e.code==="http_404")) console.error(e); }
+    const r=await graph(`/drives/${DRIVE_ID}/items/${CRM_FOLDER_ID}:/${encodeURIComponent(PM_DIR)}:/children?$select=id,name,file&$top=500`);
+    S.pmList=(r.value||[]).filter(f=>f.file && /\.json$/i.test(f.name));
+  }catch(e){ if(e && e.code==="http_404") S.pmList=[]; else throw e; }
+  S.pmListAt=Date.now(); return S.pmList;
+}
+async function loadPm(name){
+  S.pm=null; S.pmId=null; S.pmFor=name; S.pmErr=""; if(!name) return;
+  try{
+    const nk=norm(name), f=(await pmFiles()).find(x=>norm(x.name.replace(/\.json$/i,""))===nk);
+    if(!f) return;
+    const meta=await graph(`/drives/${DRIVE_ID}/items/${f.id}`);           // indirme linki (Rehber ile aynı yöntem)
+    const dl=meta["@microsoft.graph.downloadUrl"]; if(!dl) throw {code:"no_url"};
+    const res=await fetch(dl,{cache:"no-store"}); if(!res.ok) throw {code:"http_"+res.status};
+    const j=JSON.parse((await res.text()).replace(/^\uFEFF/,""));
+    if(S.pmFor!==name) return;
+    S.pm=j; S.pmId=f.id;
+  }catch(e){ console.error("portal eşleşmeleri",e); if(e && e.code==="redirect") return; S.pmErr="Portal eşleşmeleri okunamadı ("+(e.code||e.message||"hata")+")"; }
 }
 async function savePm(){
   if(!S.pm||!S.pmId) return;
@@ -2006,6 +2017,7 @@ async function savePm(){
   if(!res.ok) throw {code:"http_"+res.status};
 }
 function pmHtml(){
+  if(S.pmErr) return `<p class="hint warnc">⚠️ ${esc(S.pmErr)}</p>`;
   const j=S.pm; if(!j || !Array.isArray(j.ilanlar) || !j.ilanlar.length) return "";
   const cls=d=>({"Gönderildi":"mid","Beğendi":"ok","Gösterim":"ok","İlgilenmedi":"low"}[d]||"");
   const act=j.ilanlar.filter(x=>x.durum!=="İlgilenmedi"), off=j.ilanlar.filter(x=>x.durum==="İlgilenmedi");
