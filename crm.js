@@ -438,7 +438,7 @@ function clearForm(keepName){
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Bilgileri gir, dokunuş planını ve özel günleri seç (hazır önerildi), sonra kaydet. Doğum günü gibi tarihli günleri kayıttan sonra açılan \"Önemli günler\"den eklersin.";
   $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; $("rehSug").innerHTML=""; $("rehSug").hidden=true; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
-  S.ih=ihEmpty(); S.ihOrig=null; S.ihSrc=""; S.ihFilled=false; S.ihOpen=false; S.ihDirty=false; renderIh(); renderIhSum();
+  S.ih=ihEmpty(); S.ihOrig=null; S.ihSrc=""; S.ihFilled=false; S.ihOpen=false; S.ihDirty=false; S.pm=null; S.pmFor=""; renderIh(); renderIhSum();
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
@@ -1610,9 +1610,9 @@ function ihSummaryHtml(p, upd){
 function renderIhSum(){
   const box=$("ihSumBox"); if(!box) return;
   const hit=S.ihOrig && S.sel ? ihFind($("n").value.trim(), $("t").value) : null;
-  if(!S.ihOrig){ box.innerHTML=""; return; }
+  if(!S.ihOrig){ box.innerHTML=S.pm?`<div class="ihsum">${pmHtml()}</div>`:""; return; }
   const upd=hit && hit.u ? tr(hit.u) : "";
-  box.innerHTML=ihSummaryHtml(S.ihOrig, upd).replace(/<\/div>\s*$/, "")+matchListForContact(S.ihOrig)+portalHtml(S.ihOrig)+"</div>";
+  box.innerHTML=ihSummaryHtml(S.ihOrig, upd).replace(/<\/div>\s*$/, "")+matchListForContact(S.ihOrig)+pmHtml()+portalHtml(S.ihOrig)+"</div>";
 }
 function ihRefreshHead(){
   const p=ihReadInputs(), sc=Math.round(ihScore(p)*100), miss=ihMissingList(p);
@@ -1624,11 +1624,15 @@ function ihLoadFor(name, tel){
   S.ih=hit?JSON.parse(JSON.stringify(hit.p)):ihEmpty(); S.ihOrig=hit?JSON.parse(JSON.stringify(hit.p)):null; S.ihSrc="";
   if(!S.ih.rol){ const kt=norm(S.kt); if(kt==="alici") S.ih.rol="Alıcı"; else if(kt==="satici") S.ih.rol="Satıcı"; }
   S.ihOpen=ihClearedFor(name, tel).length>0; S.ihDirty=false; renderIh(); renderIhSum();
+  if(S.pmFor!==name){ S.pm=null; S.pmOpen=false; loadPm(name).then(()=>{ if(S.pmFor===name) renderIhSum(); }); }
 }
 function wireIh(){
   const box=$("ihBox"); if(!box) return;
   const openIh=()=>{ const d=box.querySelector("details"); if(d){ d.open=true; S.ihOpen=true; d.scrollIntoView({behavior:"smooth",block:"start"}); } };
-  $("ihSumBox").addEventListener("click",e=>{ if(e.target.closest("a")) return; const pm=e.target.closest(".pmrow[data-pf]"); if(pm){ showView("o"); openPf(pm.dataset.pf); return; } if(e.target.closest(".ihsum")) openIh(); });
+  $("ihSumBox").addEventListener("toggle",e=>{ if(e.target.matches(".pmsec")) S.pmOpen=e.target.open; },true);
+  $("ihSumBox").addEventListener("click",e=>{ if(e.target.closest("a")) return;
+    const st=e.target.closest(".pmst .chip"); if(st){ pmSetStatus(Number(st.parentElement.dataset.i), st.dataset.d); return; }
+    if(e.target.closest(".pmsec")) return; const pm=e.target.closest(".pmrow[data-pf]"); if(pm){ showView("o"); openPf(pm.dataset.pf); return; } if(e.target.closest(".ihsum")) openIh(); });
   $("ihSumBox").addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ") && e.target.closest(".ihsum")){ e.preventDefault(); openIh(); } });
   box.addEventListener("click",e=>{
     if(e.target.id==="ihFill"){ S.ihDirty=true; ihFillFromNote(); return; }
@@ -1979,6 +1983,47 @@ function wirePf(){
   renderRatesLbl();
 }
 function renderRatesLbl(){ const r=rates(); $("pfRates").textContent=`Kur: USD ${r.USD.toLocaleString("tr-TR")} · EUR ${r.EUR.toLocaleString("tr-TR")} ✎`; }
+
+// ================= Portal eşleşmeleri (Selin'in taramaları) =================
+// OneDrive: Gophers CRM › Portal Eşleşmeleri › <Ad Soyad>.json — Selin yazar, uygulama gösterir; durumlar aynı dosyaya geri yazılır.
+const PM_DIR="Portal Eşleşmeleri";
+const PM_DURUM=["Yeni","Gönderildi","Beğendi","Gösterim","İlgilenmedi"];
+S.pm=null; S.pmFor="";
+async function loadPm(name){
+  S.pm=null; S.pmFor=name; if(!name) return;
+  try{
+    const it=await graph(`/drives/${DRIVE_ID}/items/${CRM_FOLDER_ID}:/${encPath([PM_DIR, safeName(name)+".json"])}?$select=id,@microsoft.graph.downloadUrl`);
+    const url=it["@microsoft.graph.downloadUrl"]; if(!url) return;
+    const res=await fetch(url,{cache:"no-store"}); if(!res.ok) return;
+    const j=await res.json(); if(S.pmFor!==name) return;
+    S.pm=j; S.pmId=it.id;
+  }catch(e){ if(!(e && e.code==="http_404")) console.error(e); }
+}
+async function savePm(){
+  if(!S.pm||!S.pmId) return;
+  const tok=await token();
+  const res=await fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${S.pmId}/content`,{method:"PUT",headers:{"Authorization":"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify(S.pm,null,1)});
+  if(!res.ok) throw {code:"http_"+res.status};
+}
+function pmHtml(){
+  const j=S.pm; if(!j || !Array.isArray(j.ilanlar) || !j.ilanlar.length) return "";
+  const cls=d=>({"Gönderildi":"mid","Beğendi":"ok","Gösterim":"ok","İlgilenmedi":"low"}[d]||"");
+  const act=j.ilanlar.filter(x=>x.durum!=="İlgilenmedi"), off=j.ilanlar.filter(x=>x.durum==="İlgilenmedi");
+  const row=(x)=>{ const i=j.ilanlar.indexOf(x); return `<div class="pmrow pmrow-p"><span class="sc ${scoreCls(x.puan||0)}">${x.puan??"–"}</span><span class="pmmain2"><a href="${esc(x.url)}" target="_blank" rel="noopener"><b>${esc(x.baslik||"İlan")}</b></a><br>
+      <span class="sub">${esc([x.fiyat!=null?Number(x.fiyat).toLocaleString("tr-TR")+" "+(x.pb||"TL"):"", x.oda, x.m2?x.m2+" m²":"", x.konum].filter(Boolean).join(" · "))}</span><br>
+      <span class="sub">${esc([x.veren, x.kaynak].filter(Boolean).join(" · "))}${x.not?` · <span class="warnc">${esc(x.not)}</span>`:""}</span>
+      <div class="chips pmst" data-i="${i}">${PM_DURUM.map(d=>`<button type="button" class="chip mini ${x.durum===d?"on "+cls(d):""}" data-d="${esc(d)}" aria-pressed="${x.durum===d}">${esc(d)}</button>`).join("")}</div></span></div>`; };
+  const cnt=k=>j.ilanlar.filter(x=>x.durum===k).length;
+  return `<details class="pmatch pmsec" ${S.pmOpen?"open":""}><summary class="lab">🌐 Portal eşleşmeleri <span class="sub">· ${j.ilanlar.length} ilan · tarama ${esc(j.tarih||"")}${cnt("Gönderildi")?` · ${cnt("Gönderildi")} gönderildi`:""}${cnt("Beğendi")?` · ${cnt("Beğendi")} beğendi`:""}</span></summary>
+    ${j.ozet?`<p class="hint">${esc(j.ozet)}</p>`:""}${act.map(row).join("")}
+    ${off.length?`<details class="extra"><summary>İlgilenmedi (${off.length})</summary>${off.map(row).join("")}</details>`:""}
+    <p class="hint">Kaynak: ${esc(j.kaynak||"")}. Fiyat ve durumu ilan sayfasından teyit et. Yeni tarama için Selin'e "${esc(j.kisi||"")} için portalları tara" de.</p></details>`;
+}
+async function pmSetStatus(i, d){
+  const x=S.pm && S.pm.ilanlar[i]; if(!x) return;
+  const prev=x.durum; x.durum=(x.durum===d?"Yeni":d); x.durumTarihi=todayISO(); S.pmOpen=true; renderIhSum();
+  try{ await savePm(); toast("Durum kaydedildi"); }catch(e){ console.error(e); x.durum=prev; renderIhSum(); if(e && e.code==="redirect") return; banner(errMsg(e,"Durum kaydedilemedi")); }
+}
 
 // ================= Sesli not (konuşma → yazı + ses kaydı OneDrive'a) =================
 // Mikrofona bas: Türkçe konuşma canlı olarak "Görüşme notu"na yazılır, aynı anda ses kaydı tutulur.
