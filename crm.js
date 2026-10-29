@@ -1403,13 +1403,14 @@ function afterSavePhoto(name){
 }
 
 function showView(v){
-  const map={k:"viewKayit",b:"viewBugun",s:"viewSoz",r:"viewKira",p:"viewFirsat"}, tabs={k:"tabKayit",b:"tabBugun",s:"tabSoz",r:"tabKira",p:"tabFirsat"};
+  const map={k:"viewKayit",b:"viewBugun",s:"viewSoz",r:"viewKira",p:"viewFirsat",o:"viewPf"}, tabs={k:"tabKayit",b:"tabBugun",s:"tabSoz",r:"tabKira",p:"tabFirsat",o:"tabPf"};
   for(const [key,id] of Object.entries(map)){ $(id).classList.toggle("hidden",key!==v); $(tabs[key]).setAttribute("aria-selected",key===v); }
   document.body.classList.remove("editing");
   if(v!=="b") S.quickPlan=false;
   if(v==="b"){ renderToday(); if(!S.leadsAt || Date.now()-S.leadsAt>600000){ S.leadsAt=Date.now(); loadLeads(false); } }
   if(v==="s"){ renderModList("soz"); if(!S.modSel.soz) openMod("soz",null), document.body.classList.remove("editing"); }
   if(v==="r"){ renderModList("kira"); if(!S.modSel.kira) openMod("kira",null), document.body.classList.remove("editing"); }
+  if(v==="o"){ renderPfList(); if(!S.pfEd) openPf(null); document.body.classList.remove("editing"); }
   if(v==="p"){ renderModList("firsat"); if(!S.modSel.firsat) openMod("firsat",null), document.body.classList.remove("editing"); }
   try{ localStorage.setItem("gc_tab", v); }catch(_){}
   window.scrollTo(0,0);
@@ -1453,7 +1454,7 @@ function ihNum(v){
 }
 const ihFmt=n=>n===""||n==null?"":Number(n).toLocaleString("tr-TR");
 function ihFromRow(c,ix){
-  const g=h=>{ const v=c[ix(h)]; return v==null?"":v; };
+  const g=h=>{ const v=c[ix(h)]; return v==null?"":(typeof v==="string"?v.replace(/^'/,""):v); };
   const p=ihEmpty();
   p.rol=String(g("Rol")); p.it=String(g("İşlem türü")); p.bolge=ihList(g("Bölge")); p.alt=String(g("Alternatif bölge")); p.tip=String(g("Tip")); p.oda=ihList(g("Oda"));
   p.m2=ihNum(g("Min m²")); p.bmin=ihNum(g("Min bütçe")); p.bmax=ihNum(g("Max bütçe")); p.pb=String(g("Para birimi")); p.esn=String(g("Esneklik"));
@@ -1512,7 +1513,7 @@ function ihFeatChips(){
 }
 function renderIh(){
   const box=$("ihBox"); if(!box) return;
-  const p=S.ih, open=box.querySelector("details")?box.querySelector("details").open:S.ihOpen;
+  const p=S.ih, open=!!S.ihOpen;
   const miss=ihMissingList(p), sc=Math.round(ihScore(p)*100);
   box.innerHTML=`<details class="sec ihsec"${open?" open":""}><summary>🧭 İhtiyaç — ne arıyor? <span class="cnt ihpct ${sc>=80?"ok":sc>=50?"mid":"low"}">%${sc}</span></summary>
     <div class="ihbar"><button type="button" class="act ok" id="ihFill">✨ Nottan doldur</button><span class="hint" id="ihSrcLbl">${S.ihSrc?esc(S.ihSrc):"Görüşme notundaki bilgileri seçeneklere işler; sadece boş alanları doldurur."}</span></div>
@@ -1536,6 +1537,7 @@ function renderIh(){
     <div class="f"><span class="lab">Tercihler <span class="hint" style="margin:0">— her dokunuş: ✓✓ olmazsa olmaz → ✓ olsa iyi olur → ✕ istemem → boş</span></span>${ihFeatChips()}</div>
     <div class="f"><label for="ih_teyit">Teyit edilecek</label><input id="ih_teyit" value="${esc(p.teyit)}" placeholder="Emin olmadıkların: 'galiba kredi', 'bayramdan sonra'…"></div>
     <p class="hint ihmiss">${miss.length?"Eksik: "+esc(miss.join(", ")):"Profil tam ✓"}</p>
+    ${portalHtml(p)}
   </details>`;
 }
 function ihSummaryHtml(p, upd){
@@ -1561,7 +1563,7 @@ function renderIhSum(){
   const hit=S.ihOrig && S.sel ? ihFind($("n").value.trim(), $("t").value) : null;
   if(!S.ihOrig){ box.innerHTML=""; return; }
   const upd=hit && hit.u ? tr(hit.u) : "";
-  box.innerHTML=ihSummaryHtml(S.ihOrig, upd);
+  box.innerHTML=ihSummaryHtml(S.ihOrig, upd).replace(/<\/div>\s*$/, "")+matchListForContact(S.ihOrig)+portalHtml(S.ihOrig)+"</div>";
 }
 function ihRefreshHead(){
   const p=ihReadInputs(), sc=Math.round(ihScore(p)*100), miss=ihMissingList(p);
@@ -1577,7 +1579,7 @@ function ihLoadFor(name, tel){
 function wireIh(){
   const box=$("ihBox"); if(!box) return;
   const openIh=()=>{ const d=box.querySelector("details"); if(d){ d.open=true; S.ihOpen=true; d.scrollIntoView({behavior:"smooth",block:"start"}); } };
-  $("ihSumBox").addEventListener("click",e=>{ if(e.target.closest(".ihsum")) openIh(); });
+  $("ihSumBox").addEventListener("click",e=>{ if(e.target.closest("a")) return; const pm=e.target.closest(".pmrow[data-pf]"); if(pm){ showView("o"); openPf(pm.dataset.pf); return; } if(e.target.closest(".ihsum")) openIh(); });
   $("ihSumBox").addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ") && e.target.closest(".ihsum")){ e.preventDefault(); openIh(); } });
   box.addEventListener("click",e=>{
     if(e.target.id==="ihFill"){ ihFillFromNote(); return; }
@@ -1693,6 +1695,224 @@ async function ihSave(name, tel, src){
 }
 function saveIhCache(){ try{ localStorage.setItem("gc_ih", JSON.stringify(S.ihRows)); }catch(_){} }
 function loadIhCache(){ try{ S.ihRows=JSON.parse(localStorage.getItem("gc_ih")||"[]")||[]; }catch(_){ S.ihRows=[]; } }
+
+// ================= Portföy · Eşleştirme · Portal arama =================
+// Portföyler CRM dosyasında "🏠 Portföy" sayfasında (tablo Portfoy). Eşleştirme 25/25/15/15/10/10 (Gültekin, 28.10.2026).
+const PF_SHEET="🏠 Portföy", PF_TABLE="Portfoy";
+const PF_HEAD=["Portföy ID","Durum","Portföy adı","İşlem türü","Bölge","Mahalle / Site","Tip","Oda","m² brüt","Fiyat","Para birimi","Özellikler","İlan URL","Mal sahibi","Mal sahibi tel","Sözleşme ID","Not","Güncelleme"];
+const PF_DURUM=["Aktif","Opsiyonlu","Satıldı/Kiralandı","Pasif"];
+const MW={lok:25,but:25,tip:15,oda:15,m2:10,zam:10};
+const ZAMAN_P={"Hemen":100,"1–3 ay":80,"3–6 ay":50,"6 ay+":30,"Sadece bakıyor":10};
+const ESN_P={"Sabit":0,"%10'a kadar":0.10,"Uygun ev olursa artar":0.15};
+const SEMT_ILCE={"Oran":"Çankaya","Çayyolu":"Çankaya","Ümitköy":"Çankaya","Yaşamkent":"Çankaya","Konutkent":"Çankaya","Bilkent":"Çankaya","Beytepe":"Çankaya","Dodurga":"Çankaya","Alacaatlı":"Çankaya","Kavaklıdere":"Çankaya","Gaziosmanpaşa":"Çankaya","Çukurambar":"Çankaya","Balgat":"Çankaya","Dikmen":"Çankaya","İncek":"Gölbaşı","Kızılcaşar":"Gölbaşı","Bağlıca":"Etimesgut"};
+const ilceOf=b=>SEMT_ILCE[b]||b;
+S.pf=[]; S.pfMissing=false; S.pfSel=null; S.pfEd=null;
+
+function rates(){ let r={}; try{ r=JSON.parse(localStorage.getItem("gc_rates")||"{}")||{}; }catch(_){} return {TL:1, USD:Number(r.USD)||49.77, EUR:Number(r.EUR)||55.87}; }
+const toTL=(n,pb)=>n===""||n==null?"":Number(n)*(rates()[pb||"TL"]||1);
+const roomN=o=>{ const m=String(o||"").match(/^(\d+)/); return m?Number(m[1]):null; };
+
+function pfFromRow(c,ix,i){
+  const g=h=>{ const v=c[ix(h)]; return v==null?"":(typeof v==="string"?v.replace(/^'/,""):v); };
+  const u=g("Güncelleme");
+  return {i, id:String(g("Portföy ID")), durum:String(g("Durum"))||"Aktif", ad:String(g("Portföy adı")), it:String(g("İşlem türü")), bolge:String(g("Bölge")), mah:String(g("Mahalle / Site")),
+    tip:String(g("Tip")), oda:String(g("Oda")), m2:ihNum(g("m² brüt")), fiyat:ihNum(g("Fiyat")), pb:String(g("Para birimi"))||"TL", feat:ihList(g("Özellikler")),
+    url:String(g("İlan URL")), sahip:String(g("Mal sahibi")), stel:String(g("Mal sahibi tel")), soz:String(g("Sözleşme ID")), not:String(g("Not")), u:(typeof u==="number"&&u>2000)?fromSerial(u):""};
+}
+async function loadPf(){
+  try{
+    const r=await graph(`${WB}/tables('${PF_TABLE}')/range?$select=values`);
+    const head=r.values[0].map(h=>String(h).trim()), ix=h=>head.indexOf(h);
+    S.pf=r.values.slice(1).map((c,i)=>pfFromRow(c,ix,i)).filter(x=>x.ad||x.id); S.pfMissing=false;
+  }catch(e){ if(e && e.code==="http_404"){ S.pf=[]; S.pfMissing=true; } else throw e; }
+  try{ localStorage.setItem("gc_pf", JSON.stringify(S.pf)); }catch(_){}
+}
+function loadPfCache(){ try{ S.pf=JSON.parse(localStorage.getItem("gc_pf")||"[]")||[]; }catch(_){ S.pf=[]; } }
+const pfActive=f=>f.durum==="Aktif"||f.durum==="Opsiyonlu"||!f.durum;
+
+// ---------- puanlama ----------
+function matchScore(p, f){
+  if(p.rol && !["Alıcı","Kiracı","Yatırımcı"].includes(p.rol)) return null;
+  if(p.it && f.it && p.it!==f.it) return null;
+  if(!p.it && !p.rol) return null;
+  const must=Object.keys(p.feat).filter(k=>p.feat[k]==="Olmazsa olmaz"), no=Object.keys(p.feat).filter(k=>p.feat[k]==="İstemem");
+  const lacking=must.filter(k=>!f.feat.includes(k)), bad=no.filter(k=>f.feat.includes(k));
+  if(lacking.length||bad.length) return {elim:[lacking.length?"olmazsa olmaz yok: "+lacking.join(", "):"", bad.length?"istemediği var: "+bad.join(", "):""].filter(Boolean).join(" · ")};
+  const pb=p.bolge.map(norm), fb=norm(f.bolge), fm=norm(f.mah), alt=norm(p.alt);
+  const inLoc=b=>b && (b===fb || (fm && (" "+fm+" ").includes(" "+b+" ")));
+  let lok;
+  if(!pb.length && !alt) lok=50;
+  else if(pb.some(inLoc)) lok=100;
+  else if(alt && inLoc(alt)) lok=70;
+  else if(f.bolge && p.bolge.some(b=>ilceOf(b)===ilceOf(f.bolge))) lok=40;
+  else lok=0;
+  const price=toTL(f.fiyat,f.pb), max=toTL(p.bmax,p.pb), min=toTL(p.bmin,p.pb);
+  let but;
+  if(price===""||max==="") but=50;
+  else if(price<=max) but=(min===""||price>=min)?100:80;
+  else if(price<=max*(1+(ESN_P[p.esn]||0))) but=60;
+  else but=0;
+  const tip=(!p.tip||!f.tip)?50:(p.tip===f.tip?100:0);
+  let oda=50; const fr=roomN(f.oda);
+  if(p.oda.length && fr!=null){ if(p.oda.includes(f.oda)) oda=100; else { const d=Math.min(...p.oda.map(roomN).filter(x=>x!=null).map(x=>Math.abs(x-fr))); oda=d===0?100:d===1?50:0; } }
+  const m2=(p.m2===""||f.m2==="")?50:(f.m2>=p.m2?100:(f.m2>=0.9*p.m2?60:0));
+  const zam=ZAMAN_P[p.zaman]??50;
+  const parts={lok,but,tip,oda,m2,zam};
+  const total=Object.entries(MW).reduce((s,[k,w])=>s+parts[k]*w,0)/100;
+  return {total:Math.round(total), parts};
+}
+const scoreCls=t=>t>=80?"ok":t>=60?"mid":"low";
+function partsTxt(x){ const L={lok:"Bölge",but:"Bütçe",tip:"Tip",oda:"Oda",m2:"m²",zam:"Zaman"}; return Object.entries(x.parts).map(([k,v])=>`${L[k]} ${v}`).join(" · "); }
+function buyersFor(f){
+  const out=[], el=[];
+  for(const r of S.ihRows){ const x=matchScore(r.p,f); if(!x) continue; if(x.elim) el.push({r,why:x.elim}); else out.push({r,...x}); }
+  out.sort((a,b)=>b.total-a.total); return {out, el};
+}
+function portfoliosFor(p){
+  return S.pf.filter(pfActive).map(f=>({f, x:matchScore(p,f)})).filter(o=>o.x && !o.x.elim).sort((a,b)=>b.x.total-a.x.total);
+}
+
+// ---------- portal arama linkleri ----------
+const slug=s=>norm(s).replace(/ /g,"-");
+function portalLinks(p){
+  const op=p.it==="Kiralık"||p.rol==="Kiracı"?"kiralik":"satilik";
+  const T={Daire:"daire",Villa:"villa",Müstakil:"mustakil-ev",Arsa:"arsa",Ticari:"isyeri",Ofis:"isyeri"}[p.tip]||"daire";
+  const ilceler=[...new Set((p.bolge.length?p.bolge:[]).map(ilceOf))].slice(0,2);
+  if(!ilceler.length) ilceler.push("");
+  const tl=n=>n===""?"":Math.round(toTL(n,p.pb));
+  const out=[];
+  for(const il of ilceler){
+    const semtler=p.bolge.filter(b=>ilceOf(b)===il && b!==il);
+    const q=new URLSearchParams(); if(p.bmin!=="") q.set("price_min",tl(p.bmin)); if(p.bmax!=="") q.set("price_max",tl(p.bmax)); if(semtler.length===1) q.set("query_text",semtler[0]);
+    const loc=il?"/ankara-"+slug(il):"/ankara";
+    out.push({site:"sahibinden", il, href:`https://www.sahibinden.com/${op}-${T}${loc}${q.toString()?"?"+q:""}`});
+    out.push({site:"HepsiEmlak", il, href:`https://www.hepsiemlak.com/${il?slug(il):"ankara"}-${op}/${T}`});
+    out.push({site:"Emlakjet", il, href:`https://www.emlakjet.com/${op}-${T}${loc}`});
+  }
+  return out;
+}
+function portalHtml(p){
+  if(!ihHasData(p)) return "";
+  const ls=portalLinks(p);
+  return `<div class="portals"><span class="lab">🔎 Portallarda ara</span><div class="chips">${ls.map(l=>`<a class="chip plink" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.site)}${l.il?" · "+esc(l.il):""}</a>`).join("")}</div><p class="hint">sahibinden fiyat aralığıyla açılır; HepsiEmlak ve Emlakjet ilçe listesiyle açılır, oda ve fiyatı sayfada daralt.</p></div>`;
+}
+function matchListForContact(p){
+  if(!S.pf.length) return `<div class="ihsum-w">Uygun portföy için önce Portföy sekmesine ilanlarını gir.</div>`;
+  const m=portfoliosFor(p).filter(o=>o.x.total>=50).slice(0,5);
+  if(!m.length) return `<div class="ihsum-w">Aktif portföylerinde uygun ilan yok.</div>`;
+  return `<div class="pmatch"><span class="lab">🏠 Uygun portföylerimiz</span>${m.map(o=>`<button type="button" class="pmrow" data-pf="${esc(o.f.id)}"><span class="sc ${scoreCls(o.x.total)}">${o.x.total}</span><span><b>${esc(o.f.ad)}</b><span class="sub"> · ${esc([o.f.bolge,o.f.oda,o.f.fiyat!==""?ihFmt(o.f.fiyat)+" "+o.f.pb:""].filter(Boolean).join(" · "))}</span><br><span class="sub">${esc(partsTxt(o.x))}</span></span></button>`).join("")}</div>`;
+}
+
+// ---------- Portföy sekmesi ----------
+function pfEmpty(){ return {i:-1,id:"",durum:"Aktif",ad:"",it:"Satılık",bolge:"",mah:"",tip:"Daire",oda:"",m2:"",fiyat:"",pb:"TL",feat:[],url:"",sahip:"",stel:"",soz:"",not:""}; }
+function renderPfList(){
+  const q=norm($("pfQ").value), onlyA=$("pfOnlyA").checked;
+  let arr=S.pf.filter(f=>!onlyA||pfActive(f));
+  if(q) arr=arr.filter(f=>q.split(" ").every(t=>norm([f.id,f.ad,f.bolge,f.mah,f.tip,f.oda,f.sahip].join(" ")).includes(t)));
+  arr.sort((a,b)=>(pfActive(b)-pfActive(a))||String(b.id).localeCompare(String(a.id)));
+  $("pfHint").textContent=`${arr.length} portföy${S.ihRows.length?` · ${S.ihRows.length} ihtiyaç profili`:""}`;
+  $("pfList").innerHTML=arr.map(f=>{ const b=buyersFor(f).out.filter(o=>o.total>=60).length;
+    return `<button type="button" class="person" data-pf="${esc(f.id)}" aria-current="${S.pfSel===f.id}"><div class="nm">${esc(f.ad||f.id)}${b?`<span class="pot pot-Low">${b} uygun alıcı</span>`:""}${!pfActive(f)?`<span class="pot pot-Medium">${esc(f.durum)}</span>`:""}</div><div class="sub">${esc([f.id,f.it,f.bolge,f.mah,f.tip,f.oda,f.m2!==""?f.m2+" m²":"",f.fiyat!==""?ihFmt(f.fiyat)+" "+f.pb:""].filter(Boolean).join("  ·  "))}</div></button>`; }).join("")
+    || `<div class="empty">${S.pfMissing||!S.pf.length?"Henüz portföy yok. ＋ Yeni portföy ile ekle ya da Sözleşme DB'den aktar.":"Kayıt yok."}</div>`;
+}
+function pfChips(key, opts, multi){
+  const cur=S.pfEd[key]; const list=[...opts]; if(!multi && cur && !list.includes(cur)) list.push(cur);
+  return `<div class="chips" data-pfk="${key}"${multi?' data-multi="1"':""}>${list.map(v=>`<button type="button" class="chip" aria-pressed="${multi?cur.includes(v):cur===v}" data-v="${esc(v)}">${esc(v)}</button>`).join("")}${key==="bolge"?`<button type="button" class="chip add" data-other="1">Diğer…</button>`:""}</div>`;
+}
+function openPf(id){
+  const f=id?S.pf.find(x=>x.id===id):null;
+  S.pfSel=f?f.id:null; S.pfEd=f?JSON.parse(JSON.stringify(f)):pfEmpty();
+  renderPfForm(); renderPfList();
+  if(id) document.body.classList.add("editing");
+}
+function renderPfForm(){
+  const d=S.pfEd, isNew=d.i<0;
+  let match="";
+  if(!isNew){
+    const {out,el}=buyersFor(d);
+    const rows=out.slice(0,15).map(o=>{ const c=S.contacts.get(norm(o.r.n)); const wa=waNum(o.r.t||(c&&c.t)||"");
+      return `<div class="pmrow"><span class="sc ${scoreCls(o.total)}">${o.total}</span><span class="pmmain" data-k="${esc(c?c.key:"")}" data-n="${esc(o.r.n)}" role="button" tabindex="0"><b>${esc(o.r.n)}</b>${c&&c.p?`<span class="${potCls(c.p)}">${esc(c.p)}</span>`:""}<br><span class="sub">${esc(partsTxt(o))}</span>${o.r.p.teyit?`<br><span class="sub warnc">❓ ${esc(o.r.p.teyit)}</span>`:""}</span>${wa?`<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener" aria-label="WhatsApp">WA</a>`:""}</div>`; }).join("");
+    match=`<details class="sec" open><summary>🎯 Uygun alıcılar <span class="cnt">${out.length}</span></summary>
+      ${rows||`<p class="hint">Bu portföye uyan ihtiyaç profili yok.</p>`}
+      ${el.length?`<details class="extra"><summary>Elenenler (${el.length})</summary>${el.map(e=>`<div class="sub" style="padding:4px 0">${esc(e.r.n)} — ${esc(e.why)}</div>`).join("")}</details>`:""}
+      <p class="hint">Puan: Bölge 25 · Bütçe 25 · Tip 15 · Oda 15 · m² 10 · Zaman 10. Olmazsa olmazı tutmayan ya da istemediği özelliği olan alıcı elenir.</p></details>`;
+  }
+  $("pfForm").innerHTML=`<button type="button" class="mobile-back" id="pfBack">‹ Listeye dön</button>
+    <h2>${isNew?"Yeni portföy":esc(d.ad||d.id)}</h2><div class="meta">${isNew?"İlanın özelliklerini seç; kaydedince uygun alıcılar listelenir.":esc([d.id,d.u?"güncelleme "+tr(d.u):""].filter(Boolean).join(" · "))}</div>
+    ${match}
+    <div class="f"><label for="pf_ad">Portföy adı</label><input id="pf_ad" value="${esc(d.ad)}" placeholder="Örn. Park Oran B7 4+1"></div>
+    <div class="f"><span class="lab">Durum</span>${pfChips("durum",PF_DURUM)}</div>
+    <div class="f"><span class="lab">İşlem</span>${pfChips("it",IH_OPT.it)}</div>
+    <div class="f"><span class="lab">Bölge</span>${pfChips("bolge",IH_OPT.bolge)}</div>
+    <div class="f"><label for="pf_mah">Mahalle / Site</label><input id="pf_mah" value="${esc(d.mah)}" placeholder="Örn. Park Oran, Ahmet Taner Kışlalı"></div>
+    <div class="f"><span class="lab">Tip</span>${pfChips("tip",IH_OPT.tip)}</div>
+    <div class="f"><span class="lab">Oda</span>${pfChips("oda",IH_OPT.oda.concat(["4+2","5+2"]))}</div>
+    <div class="row"><div class="f"><label for="pf_m2">m² brüt</label><input id="pf_m2" inputmode="numeric" value="${esc(d.m2===""?"":String(d.m2))}"></div>
+      <div class="f"><label for="pf_fiyat">Fiyat</label><input id="pf_fiyat" inputmode="decimal" value="${esc(ihFmt(d.fiyat))}" placeholder="14,5 milyon"></div></div>
+    <div class="f"><span class="lab">Para birimi</span>${pfChips("pb",IH_OPT.pb)}</div>
+    <div class="f"><span class="lab">Özellikler (olanları seç)</span>${pfChips("feat",IH_FEAT,true)}</div>
+    <div class="f"><label for="pf_url">İlan URL</label><input id="pf_url" value="${esc(d.url)}"></div>
+    <div class="row"><div class="f"><label for="pf_sahip">Mal sahibi</label><input id="pf_sahip" value="${esc(d.sahip)}"></div>
+      <div class="f"><label for="pf_stel">Mal sahibi tel</label><input id="pf_stel" inputmode="tel" value="${esc(d.stel)}"></div></div>
+    <div class="row"><div class="f"><label for="pf_soz">Sözleşme ID</label><input id="pf_soz" value="${esc(d.soz)}" placeholder="2026-101"></div></div>
+    <div class="f"><label for="pf_not">Not</label><textarea id="pf_not">${esc(d.not)}</textarea></div>
+    <button class="save" id="pfSave" type="submit">Kaydet</button>`;
+}
+function pfRead(){ const d=S.pfEd; d.ad=$("pf_ad").value.trim(); d.mah=$("pf_mah").value.trim(); d.m2=ihNum($("pf_m2").value); d.fiyat=ihNum($("pf_fiyat").value); d.url=$("pf_url").value.trim(); d.sahip=$("pf_sahip").value.trim(); d.stel=$("pf_stel").value.trim(); d.soz=$("pf_soz").value.trim(); d.not=$("pf_not").value.trim(); return d; }
+function pfRow(d){ return PF_HEAD.map(h=>({"Portföy ID":d.id,"Durum":d.durum,"Portföy adı":cellIn(d.ad),"İşlem türü":d.it,"Bölge":d.bolge,"Mahalle / Site":cellIn(d.mah),"Tip":d.tip,"Oda":cellIn(d.oda||""),"m² brüt":d.m2===""?"":Number(d.m2),"Fiyat":d.fiyat===""?"":Number(d.fiyat),"Para birimi":d.pb,"Özellikler":d.feat.join(", "),"İlan URL":cellIn(d.url),"Mal sahibi":cellIn(d.sahip),"Mal sahibi tel":cellIn(d.stel),"Sözleşme ID":cellIn(d.soz),"Not":cellIn(d.not),"Güncelleme":serial(todayISO())})[h]); }
+function pfNextId(){ const n=S.pf.map(f=>Number(String(f.id).replace(/\D/g,""))||0); return "PF-"+String((n.length?Math.max(...n):0)+1).padStart(3,"0"); }
+async function savePf(e){
+  e.preventDefault(); const d=pfRead();
+  if(!d.ad){ toast("Portföy adı gerekli"); $("pf_ad").focus(); return; }
+  const btn=$("pfSave"); btn.disabled=true; btn.textContent="Excel'e yazılıyor…";
+  try{
+    await loadPf(); await ensureTable(PF_SHEET, PF_TABLE, PF_HEAD); if(S.pfMissing) await loadPf();
+    const hit=d.id?S.pf.find(x=>x.id===d.id):null;
+    if(hit) await graph(`${WB}/tables('${PF_TABLE}')/rows/itemAt(index=${hit.i})`,{method:"PATCH",body:{values:[pfRow(d)]}});
+    else { d.id=pfNextId(); await graph(`${WB}/tables('${PF_TABLE}')/rows/add`,{method:"POST",body:{values:[pfRow(d)]}}); }
+    await loadPf(); toast("Portföy kaydedildi"); openPf(d.id);
+  }catch(err){ console.error(err); if(err && err.code==="redirect") return; banner(errMsg(err,"Portföy kaydedilemedi")); btn.disabled=false; btn.textContent="Kaydet"; }
+}
+async function importFromSoz(){
+  const cand=(S.soz||[]).filter(d=>String(d.AK||"").includes("Devam") && !S.pf.some(f=>f.soz===String(d.A)));
+  if(!cand.length){ toast("Aktarılacak 'Devam Ediyor' sözleşme yok"); return; }
+  const btn=$("pfImport"); btn.disabled=true; btn.textContent=`${cand.length} kayıt aktarılıyor…`;
+  try{
+    await loadPf(); await ensureTable(PF_SHEET, PF_TABLE, PF_HEAD); if(S.pfMissing) await loadPf();
+    const rows=cand.map((d,k)=>{ const t=String(d.D||""); const f=pfEmpty();
+      f.id="PF-"+String((Math.max(0,...S.pf.map(x=>Number(String(x.id).replace(/\D/g,""))||0))+1+k)).padStart(3,"0");
+      f.ad=String(d.E||d.A||""); f.it=/KİRA|DEVİR/.test(t)?"Kiralık":"Satılık"; f.tip=/VİLLA/.test(t)?"Villa":/ARSA/.test(t)?"Arsa":/TİCARİ|ENDÜSTRİYEL/.test(t)?"Ticari":"Daire";
+      f.mah=String(d.F||""); f.oda=String(d.H||""); f.m2=ihNum(d.G); f.fiyat=ihNum(d.L||d.AC); f.url=String(d.K||""); f.sahip=String(d.N||""); f.stel=String(d.O||""); f.soz=String(d.A||"");
+      f.not="Sözleşme DB'den aktarıldı; bölge ve özellikleri tamamla."; return pfRow(f); });
+    await graph(`${WB}/tables('${PF_TABLE}')/rows/add`,{method:"POST",body:{values:rows}});
+    await loadPf(); renderPfList(); toast(`${rows.length} portföy aktarıldı — bölge ve özellikleri tamamla`);
+  }catch(err){ console.error(err); if(err && err.code==="redirect") return; banner(errMsg(err,"Aktarılamadı")); }
+  finally{ btn.disabled=false; btn.textContent="⇩ Sözleşme DB'den aktar"; }
+}
+function wirePf(){
+  if(!$("pfForm")) return;
+  $("pfQ").addEventListener("input",renderPfList); $("pfOnlyA").addEventListener("change",renderPfList);
+  $("pfNew").addEventListener("click",()=>{ openPf(null); document.body.classList.add("editing"); $("pf_ad").focus(); });
+  $("pfImport").addEventListener("click",importFromSoz);
+  $("pfList").addEventListener("click",e=>{ const b=e.target.closest("[data-pf]"); if(b) openPf(b.dataset.pf); });
+  $("pfForm").addEventListener("submit",savePf);
+  $("pfForm").addEventListener("click",e=>{
+    if(e.target.id==="pfBack"){ document.body.classList.remove("editing"); return; }
+    const mm=e.target.closest(".pmmain"); if(mm){ const k=mm.dataset.k; showView("k"); if(k && S.contacts.has(k)) selectContact(k); else { $("q").value=mm.dataset.n; renderResults(); } return; }
+    const b=e.target.closest(".chip"), g=e.target.closest("[data-pfk]"); if(!b||!g) return;
+    pfRead(); const key=g.dataset.pfk, d=S.pfEd;
+    if(b.dataset.other){ const inp=document.createElement("input"); inp.className="otherin"; inp.placeholder="Bölge yaz, Enter"; b.replaceWith(inp); inp.focus();
+      const done=()=>{ const v=inp.value.trim(); if(v) d.bolge=v; renderPfForm(); }; inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); done(); } }); inp.addEventListener("blur",done); return; }
+    const v=b.dataset.v;
+    if(g.dataset.multi){ const i=d[key].indexOf(v); if(i>=0) d[key].splice(i,1); else d[key].push(v); } else d[key]=d[key]===v&&key!=="durum"&&key!=="it"&&key!=="pb"?"":v;
+    renderPfForm();
+  });
+  $("pfForm").addEventListener("change",e=>{ if(e.target.id==="pf_fiyat"){ const n=ihNum(e.target.value); if(n!=="") e.target.value=ihFmt(n); } });
+  $("pfRates").addEventListener("click",()=>{ const r=rates(); const u=prompt("1 USD kaç TL?",r.USD); if(u===null) return; const eu=prompt("1 EUR kaç TL?",r.EUR); if(eu===null) return;
+    try{ localStorage.setItem("gc_rates",JSON.stringify({USD:Number(String(u).replace(",","."))||r.USD,EUR:Number(String(eu).replace(",","."))||r.EUR})); }catch(_){} renderRatesLbl(); renderPfList(); if(S.pfEd) renderPfForm(); });
+  renderRatesLbl();
+}
+function renderRatesLbl(){ const r=rates(); $("pfRates").textContent=`Kur: USD ${r.USD.toLocaleString("tr-TR")} · EUR ${r.EUR.toLocaleString("tr-TR")} ✎`; }
 
 // ================= Sesli not (konuşma → yazı + ses kaydı OneDrive'a) =================
 // Mikrofona bas: Türkçe konuşma canlı olarak "Görüşme notu"na yazılır, aynı anda ses kaydı tutulur.
@@ -1837,7 +2057,7 @@ function wire(){
       }catch(e){ console.error(e); }
     });
   }
-  wireOg(); wireDocs(); wireVoice(); wireIh();
+  wireOg(); wireDocs(); wireVoice(); wireIh(); wirePf();
   $("tfChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); $("tf").value=formatTf(t.plan===b.dataset.v?"":b.dataset.v, t.sd); renderPlanChips(); });
   $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; S.sdTouched=true; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
@@ -1862,7 +2082,7 @@ function wire(){
   $("syncBtn").addEventListener("click",()=>{ banner(""); refresh(true); });
   $("signoutBtn").addEventListener("click",()=>msalApp.logoutRedirect({account:S.account, postLogoutRedirectUri:BASE+"crm.html"}));
   const show=showView;
-  $("tabKayit").onclick=()=>show("k"); $("tabBugun").onclick=()=>show("b"); $("tabSoz").onclick=()=>show("s"); $("tabKira").onclick=()=>show("r"); $("tabFirsat").onclick=()=>show("p");
+  $("tabKayit").onclick=()=>show("k"); $("tabBugun").onclick=()=>show("b"); $("tabSoz").onclick=()=>show("s"); $("tabKira").onclick=()=>show("r"); $("tabFirsat").onclick=()=>show("p"); $("tabPf").onclick=()=>show("o");
   const openFromToday=e=>{ if(e.target.closest(".wa")) return; if(e.target.closest("summary")) return; if(e.target.closest(".acts")){ if(e.type==="click") onAct(e); return; } const r=e.target.closest(".call"); if(!r) return;
     if(r.dataset.mod){ show(r.dataset.mod==="soz"?"s":"r"); openMod(r.dataset.mod,r.dataset.id); return; }
     if(r.dataset.lead){ show("k"); openLead(r.dataset.lead); return; }
@@ -1891,7 +2111,7 @@ const APP_V = (document.querySelector('script[src*="crm.js"]')||{src:""}).src.sp
 async function refresh(manual){
   $("syncLbl").textContent="Excel okunuyor…";
   try{
-    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat"), loadOg().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; }), loadIh().then(saveIhCache).catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; })]);
+    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat"), loadOg().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; }), loadIh().then(saveIhCache).catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; }), loadPf().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; })]);
     S.modsLoaded=true;
     const busy=document.activeElement && ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName);
     rebuild(); if(!busy){ renderModList("soz"); renderModList("kira"); renderModList("firsat"); }
@@ -1924,12 +2144,12 @@ async function boot(){
   msalApp.setActiveAccount(S.account);
   $("signin").hidden=true; $("app").hidden=false;
   wire();
-  const had=loadCache(); loadIhCache();
+  const had=loadCache(); loadIhCache(); loadPfCache();
   if(had){ rebuild(); renderModList("soz"); renderModList("kira"); renderModList("firsat"); $("syncLbl").textContent="Excel okunuyor…"; }
   const qs=new URLSearchParams(location.search);
   let tab="k"; try{ tab=localStorage.getItem("gc_tab")||"k"; }catch(_){}
   if(qs.get("tab")) tab=qs.get("tab");
-  showView(["k","b","s","r","p"].includes(tab)?tab:"k");
+  showView(["k","b","s","r","p","o"].includes(tab)?tab:"k");
   S.leadsAt=Date.now(); S.leadsState="loading"; const lp=loadLeads(false);
   await refresh(false);
   lp.then(()=>renderToday());
