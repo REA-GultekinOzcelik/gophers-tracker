@@ -438,7 +438,7 @@ function clearForm(keepName){
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Bilgileri gir, dokunuş planını ve özel günleri seç (hazır önerildi), sonra kaydet. Doğum günü gibi tarihli günleri kayıttan sonra açılan \"Önemli günler\"den eklersin.";
   $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; $("rehSug").innerHTML=""; $("rehSug").hidden=true; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
-  S.ih=ihEmpty(); S.ihOrig=null; S.ihSrc=""; S.ihFilled=false; S.ihOpen=false; renderIh();
+  S.ih=ihEmpty(); S.ihOrig=null; S.ihSrc=""; S.ihFilled=false; S.ihOpen=false; renderIh(); renderIhSum();
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
@@ -1475,7 +1475,7 @@ async function loadIh(){
   try{
     const r=await graph(`${WB}/tables('${IH_TABLE}')/range?$select=values`);
     const head=r.values[0].map(h=>String(h).trim()), ix=h=>head.indexOf(h);
-    S.ihRows=r.values.slice(1).map((c,i)=>({i, n:String(c[ix("Contact name")]??"").trim(), t:String(c[ix("Telephone")]??""), p:ihFromRow(c,ix)})).filter(x=>x.n);
+    S.ihRows=r.values.slice(1).map((c,i)=>{ const g=c[ix("Güncelleme")]; return {i, n:String(c[ix("Contact name")]??"").trim(), t:String(c[ix("Telephone")]??""), u:(typeof g==="number"&&g>2000)?fromSerial(g):"", p:ihFromRow(c,ix)}; }).filter(x=>x.n);
     S.ihMissing=false;
   }catch(e){ if(e && e.code==="http_404"){ S.ihRows=[]; S.ihMissing=true; } else throw e; }
 }
@@ -1538,6 +1538,31 @@ function renderIh(){
     <p class="hint ihmiss">${miss.length?"Eksik: "+esc(miss.join(", ")):"Profil tam ✓"}</p>
   </details>`;
 }
+function ihSummaryHtml(p, upd){
+  const parts=[];
+  const who=[p.rol,p.it].filter(Boolean).join(" · "); if(who) parts.push(who);
+  if(p.bolge.length) parts.push("📍 "+p.bolge.join(", ")+(p.alt?" (alt. "+p.alt+")":""));
+  const ev=[p.tip,p.oda.join("/"),p.m2!==""?p.m2+" m²+":""].filter(Boolean).join(" · "); if(ev) parts.push("🏠 "+ev);
+  const short=n=>n>=1e6?(Math.round(n/1e5)/10).toLocaleString("tr-TR")+" M":n>=1e3?Math.round(n/1e3).toLocaleString("tr-TR")+" B":String(n);
+  if(p.bmin!==""||p.bmax!=="") parts.push("💰 "+(p.bmin!==""&&p.bmax!==""?short(p.bmin)+"–"+short(p.bmax):p.bmax!==""?"≤ "+short(p.bmax):"≥ "+short(p.bmin))+" "+(p.pb||"")+(p.esn&&p.esn!=="Sabit"?" ("+p.esn.toLocaleLowerCase("tr")+")":""));
+  const fin=[p.oz,p.kredi?"kredi: "+p.kredi.toLocaleLowerCase("tr"):"",p.satip==="Evet"?"evini satıp alacak":""].filter(Boolean).join(" · "); if(fin) parts.push("🏦 "+fin);
+  if(p.zaman) parts.push("⏱ "+p.zaman);
+  const f=st=>Object.keys(p.feat).filter(k=>p.feat[k]===st);
+  const tags=[...f("Olmazsa olmaz").map(x=>`<span class="ihtag must">✓✓ ${esc(x)}</span>`),...f("Olsa iyi olur").map(x=>`<span class="ihtag nice">✓ ${esc(x)}</span>`),...f("İstemem").map(x=>`<span class="ihtag no">✕ ${esc(x)}</span>`)].join("");
+  const miss=ihMissingList(p), sc=Math.round(ihScore(p)*100);
+  return `<div class="ihsum" role="button" tabindex="0" title="İhtiyaç bölümünü aç">
+    <div class="ihsum-h">🧭 Ne arıyor <span class="cnt ihpct ${sc>=80?"ok":sc>=50?"mid":"low"}">%${sc}</span>${upd?`<span class="sub"> · son güncelleme ${esc(upd)}</span>`:""}<span class="ihedit">Düzenle ›</span></div>
+    <div class="ihsum-b">${parts.map(esc).join("<br>")||"—"}</div>${tags?`<div class="ihtags">${tags}</div>`:""}
+    ${p.teyit?`<div class="ihsum-w">❓ Teyit: ${esc(p.teyit)}</div>`:""}${miss.length?`<div class="ihsum-w">Eksik: ${esc(miss.join(", "))} — bu görüşmede sor</div>`:""}
+  </div>`;
+}
+function renderIhSum(){
+  const box=$("ihSumBox"); if(!box) return;
+  const hit=S.ihOrig && S.sel ? ihFind($("n").value.trim(), $("t").value) : null;
+  if(!S.ihOrig){ box.innerHTML=""; return; }
+  const upd=hit && hit.u ? tr(hit.u) : "";
+  box.innerHTML=ihSummaryHtml(S.ihOrig, upd);
+}
 function ihRefreshHead(){
   const p=ihReadInputs(), sc=Math.round(ihScore(p)*100), miss=ihMissingList(p);
   const pc=document.querySelector("#ihBox .ihpct"); if(pc){ pc.textContent="%"+sc; pc.className="cnt ihpct "+(sc>=80?"ok":sc>=50?"mid":"low"); }
@@ -1547,10 +1572,13 @@ function ihLoadFor(name, tel){
   const hit=ihFind(name, tel);
   S.ih=hit?JSON.parse(JSON.stringify(hit.p)):ihEmpty(); S.ihOrig=hit?JSON.parse(JSON.stringify(hit.p)):null; S.ihSrc="";
   if(!S.ih.rol){ const kt=norm(S.kt); if(kt==="alici") S.ih.rol="Alıcı"; else if(kt==="satici") S.ih.rol="Satıcı"; }
-  S.ihOpen=!!hit; renderIh();
+  S.ihOpen=false; renderIh(); renderIhSum();
 }
 function wireIh(){
   const box=$("ihBox"); if(!box) return;
+  const openIh=()=>{ const d=box.querySelector("details"); if(d){ d.open=true; S.ihOpen=true; d.scrollIntoView({behavior:"smooth",block:"start"}); } };
+  $("ihSumBox").addEventListener("click",e=>{ if(e.target.closest(".ihsum")) openIh(); });
+  $("ihSumBox").addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ") && e.target.closest(".ihsum")){ e.preventDefault(); openIh(); } });
   box.addEventListener("click",e=>{
     if(e.target.id==="ihFill"){ ihFillFromNote(); return; }
     const fb=e.target.closest(".chip.feat");
