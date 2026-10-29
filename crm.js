@@ -1756,7 +1756,12 @@ const MW={lok:25,but:25,tip:15,oda:15,m2:10,zam:10};
 const ZAMAN_P={"Hemen":100,"1–3 ay":80,"3–6 ay":50,"6 ay+":30,"Sadece bakıyor":10};
 const ESN_P={"Sabit":0,"%10'a kadar":0.10,"Uygun ev olursa artar":0.15};
 const SEMT_ILCE={"Oran":"Çankaya","Çayyolu":"Çankaya","Ümitköy":"Çankaya","Yaşamkent":"Çankaya","Konutkent":"Çankaya","Bilkent":"Çankaya","Beytepe":"Çankaya","Dodurga":"Çankaya","Alacaatlı":"Çankaya","Kavaklıdere":"Çankaya","Gaziosmanpaşa":"Çankaya","Çukurambar":"Çankaya","Balgat":"Çankaya","Dikmen":"Çankaya","İncek":"Gölbaşı","Kızılcaşar":"Gölbaşı","Bağlıca":"Etimesgut"};
+Object.assign(SEMT_ILCE,{"Bitez":"Bodrum","Ortakent":"Bodrum","Yalıkavak":"Bodrum","Gündoğan":"Bodrum","Türkbükü":"Bodrum","Gölköy":"Bodrum","Gümüşlük":"Bodrum","Torba":"Bodrum","Turgutreis":"Bodrum","Konacık":"Bodrum","Akyarlar":"Bodrum","Alaçatı":"Çeşme","Ilıca":"Çeşme","Ölüdeniz":"Fethiye","Göcek":"Fethiye","Kalkan":"Kaş"});
+const ILCE_IL={"Çankaya":"Ankara","Gölbaşı":"Ankara","Etimesgut":"Ankara","Yenimahalle":"Ankara","Keçiören":"Ankara","Mamak":"Ankara","Altındağ":"Ankara","Sincan":"Ankara","Pursaklar":"Ankara",
+  "Bodrum":"Muğla","Fethiye":"Muğla","Marmaris":"Muğla","Datça":"Muğla","Milas":"Muğla","Dalaman":"Muğla","Ortaca":"Muğla","Köyceğiz":"Muğla","Çeşme":"İzmir","Urla":"İzmir","Seferihisar":"İzmir","Karşıyaka":"İzmir",
+  "Kuşadası":"Aydın","Didim":"Aydın","Alanya":"Antalya","Kaş":"Antalya","Kemer":"Antalya","Muratpaşa":"Antalya","Konyaaltı":"Antalya","Ayvalık":"Balıkesir","Edremit":"Balıkesir"};
 const ilceOf=b=>SEMT_ILCE[b]||b;
+const ilOf=b=>ILCE_IL[ilceOf(b)]||"";
 S.pf=[]; S.pfMissing=false; S.pfSel=null; S.pfEd=null;
 
 function rates(){ let r={}; try{ r=JSON.parse(localStorage.getItem("gc_rates")||"{}")||{}; }catch(_){} return {TL:1, USD:Number(r.USD)||49.77, EUR:Number(r.EUR)||55.87}; }
@@ -1828,17 +1833,22 @@ const slug=s=>norm(s).replace(/ /g,"-");
 function portalLinks(p){
   const op=p.it==="Kiralık"||p.rol==="Kiracı"?"kiralik":"satilik";
   const T={Daire:"daire",Villa:"villa",Müstakil:"mustakil-ev",Arsa:"arsa",Ticari:"isyeri",Ofis:"isyeri"}[p.tip]||"daire";
-  const ilceler=[...new Set((p.bolge.length?p.bolge:[]).map(ilceOf))].slice(0,2);
-  if(!ilceler.length) ilceler.push("");
   const tl=n=>n===""?"":Math.round(toTL(n,p.pb));
+  // konumları ilçe bazında grupla; bilinmeyen konum → anahtar kelimeyle ara
+  const groups=new Map();
+  for(const b of p.bolge){ const il=ilOf(b), ilce=ilceOf(b), key=il?il+"|"+ilce:"?|"+b; if(!groups.has(key)) groups.set(key,{il, ilce:il?ilce:"", semt:[] , raw:il?"":b}); if(il && b!==ilce) groups.get(key).semt.push(b); }
+  if(!groups.size) groups.set("|",{il:"",ilce:"",semt:[],raw:""});
   const out=[];
-  for(const il of ilceler){
-    const semtler=p.bolge.filter(b=>ilceOf(b)===il && b!==il);
-    const q=new URLSearchParams(); if(p.bmin!=="") q.set("price_min",tl(p.bmin)); if(p.bmax!=="") q.set("price_max",tl(p.bmax)); if(semtler.length===1) q.set("query_text",semtler[0]);
-    const loc=il?"/ankara-"+slug(il):"/ankara";
-    out.push({site:"sahibinden", il, href:`https://www.sahibinden.com/${op}-${T}${loc}${q.toString()?"?"+q:""}`});
-    out.push({site:"HepsiEmlak", il, href:`https://www.hepsiemlak.com/${il?slug(il):"ankara"}-${op}/${T}`});
-    out.push({site:"Emlakjet", il, href:`https://www.emlakjet.com/${op}-${T}${loc}`});
+  for(const g of [...groups.values()].slice(0,2)){
+    const q=new URLSearchParams(); if(p.bmin!=="") q.set("price_min",tl(p.bmin)); if(p.bmax!=="") q.set("price_max",tl(p.bmax));
+    const kw=g.raw || (g.semt.length===1?g.semt[0]:""); if(kw) q.set("query_text",kw);
+    const loc=g.il?"/"+slug(g.il)+"-"+slug(g.ilce):"";
+    const lbl=g.ilce||g.raw;
+    out.push({site:"sahibinden", il:lbl, href:`https://www.sahibinden.com/${op}-${T}${loc}${q.toString()?"?"+q:""}`});
+    if(g.il){
+      out.push({site:"HepsiEmlak", il:lbl, href:`https://www.hepsiemlak.com/${slug(g.ilce)}-${op}/${T}`});
+      out.push({site:"Emlakjet", il:lbl, href:`https://www.emlakjet.com/${op}-${T}${loc}`});
+    }
   }
   return out;
 }
