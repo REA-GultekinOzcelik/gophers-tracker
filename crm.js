@@ -1442,7 +1442,7 @@ const IH_FST=["","Olmazsa olmaz","Olsa iyi olur","İstemem"];      // tıklama s
 const IH_KEYS=[["rol","Rol"],["it","İşlem türü"],["bolge","Bölge"],["tip","Tip"],["oda","Oda"],["bmax","Bütçe"],["pb","Para birimi"],["oz","Öz kaynak"],["kredi","Kredi"],["zaman","İşlem zamanı"]];
 S.ih={}; S.ihOrig=null; S.ihRows=[]; S.ihMissing=false; S.ihSrc="";
 
-function ihEmpty(){ return {rol:"",it:"",bolge:[],alt:"",tip:"",oda:[],m2:"",bmin:"",bmax:"",pb:"",esn:"",oz:"",kredi:"",satip:"",zaman:"",feat:{},teyit:""}; }
+function ihEmpty(){ return {rol:"",it:"",bolge:[],alt:"",tip:[],oda:[],m2:"",bmin:"",bmax:"",pb:"",esn:"",oz:"",kredi:"",satip:"",zaman:"",feat:{},teyit:""}; }
 const ihList=v=>String(v||"").split(/\s*[,;]\s*/).map(x=>x.trim()).filter(Boolean);
 function ihNum(v){
   if(typeof v==="number") return isFinite(v)?v:"";
@@ -1456,7 +1456,7 @@ const ihFmt=n=>n===""||n==null?"":Number(n).toLocaleString("tr-TR");
 function ihFromRow(c,ix){
   const g=h=>{ const v=c[ix(h)]; return v==null?"":(typeof v==="string"?v.replace(/^'/,""):v); };
   const p=ihEmpty();
-  p.rol=String(g("Rol")); p.it=String(g("İşlem türü")); p.bolge=ihList(g("Bölge")); p.alt=String(g("Alternatif bölge")); p.tip=String(g("Tip")); p.oda=ihList(g("Oda"));
+  p.rol=String(g("Rol")); p.it=String(g("İşlem türü")); p.bolge=ihList(g("Bölge")); p.alt=String(g("Alternatif bölge")); p.tip=ihList(g("Tip")); p.oda=ihList(g("Oda"));
   p.m2=ihNum(g("Min m²")); p.bmin=ihNum(g("Min bütçe")); p.bmax=ihNum(g("Max bütçe")); p.pb=String(g("Para birimi")); p.esn=String(g("Esneklik"));
   p.oz=String(g("Öz kaynak")); p.kredi=String(g("Kredi")); p.satip=String(g("Satıp alacak")); p.zaman=String(g("İşlem zamanı")); p.teyit=String(g("Teyit edilecek"));
   for(const [h,st] of [["Olmazsa olmaz","Olmazsa olmaz"],["Olsa iyi olur","Olsa iyi olur"],["İstenmeyen","İstemem"]]) for(const f of ihList(g(h))) p.feat[f]=st;
@@ -1464,7 +1464,7 @@ function ihFromRow(c,ix){
 }
 function ihFlat(p){       // karşılaştırma ve yazma için alan → metin
   const fl=st=>IH_FEAT.concat(Object.keys(p.feat).filter(f=>!IH_FEAT.includes(f))).filter(f=>p.feat[f]===st).join(", ");
-  return {"Rol":p.rol,"İşlem türü":p.it,"Bölge":p.bolge.join(", "),"Alternatif bölge":p.alt,"Tip":p.tip,"Oda":p.oda.join(", "),"Min m²":p.m2===""?"":String(p.m2),
+  return {"Rol":p.rol,"İşlem türü":p.it,"Bölge":p.bolge.join(", "),"Alternatif bölge":p.alt,"Tip":p.tip.join(", "),"Oda":p.oda.join(", "),"Min m²":p.m2===""?"":String(p.m2),
     "Min bütçe":p.bmin===""?"":String(p.bmin),"Max bütçe":p.bmax===""?"":String(p.bmax),"Para birimi":p.pb,"Esneklik":p.esn,"Öz kaynak":p.oz,"Kredi":p.kredi,"Satıp alacak":p.satip,
     "İşlem zamanı":p.zaman,"Olmazsa olmaz":fl("Olmazsa olmaz"),"Olsa iyi olur":fl("Olsa iyi olur"),"İstenmeyen":fl("İstemem"),"Teyit edilecek":p.teyit};
 }
@@ -1514,10 +1514,11 @@ function ihClearedFor(name, tel){
   return Object.values(last).filter(r=>r.eski && !r.yeni);
 }
 function ihApplyField(p, alan, v){
-  const map={"Rol":"rol","İşlem türü":"it","Alternatif bölge":"alt","Tip":"tip","Para birimi":"pb","Esneklik":"esn","Öz kaynak":"oz","Kredi":"kredi","Satıp alacak":"satip","İşlem zamanı":"zaman","Teyit edilecek":"teyit"};
+  const map={"Rol":"rol","İşlem türü":"it","Alternatif bölge":"alt","Para birimi":"pb","Esneklik":"esn","Öz kaynak":"oz","Kredi":"kredi","Satıp alacak":"satip","İşlem zamanı":"zaman","Teyit edilecek":"teyit"};
   if(map[alan]) p[map[alan]]=v;
   else if(alan==="Bölge") p.bolge=ihList(v);
   else if(alan==="Oda") p.oda=ihList(v);
+  else if(alan==="Tip") p.tip=ihList(v);
   else if(alan==="Min m²") p.m2=ihNum(v);
   else if(alan==="Min bütçe") p.bmin=ihNum(v);
   else if(alan==="Max bütçe") p.bmax=ihNum(v);
@@ -1569,7 +1570,7 @@ function renderIh(){
     <div class="f"><span class="lab">İşlem</span>${ihChips("it")}</div>
     <div class="f"><span class="lab">Bölge (birden fazla)</span>${ihChips("bolge",true)}</div>
     <div class="f"><label for="ih_alt">Alternatif bölge</label><input id="ih_alt" value="${esc(p.alt)}" placeholder="Olabilir dediği bölge"></div>
-    <div class="f"><span class="lab">Tip</span>${ihChips("tip")}</div>
+    <div class="f"><span class="lab">Tip (birden fazla)</span>${ihChips("tip",true)}</div>
     <div class="f"><span class="lab">Oda (birden fazla)</span>${ihChips("oda",true)}</div>
     <div class="row">
       <div class="f"><label for="ih_bmin">Min bütçe / fiyat</label><input id="ih_bmin" inputmode="decimal" value="${esc(ihFmt(p.bmin))}" placeholder="12 milyon"></div>
@@ -1592,7 +1593,7 @@ function ihSummaryHtml(p, upd){
   const parts=[];
   const who=[p.rol,p.it].filter(Boolean).join(" · "); if(who) parts.push(who);
   if(p.bolge.length) parts.push("📍 "+p.bolge.join(", ")+(p.alt?" (alt. "+p.alt+")":""));
-  const ev=[p.tip,p.oda.join("/"),p.m2!==""?p.m2+" m²+":""].filter(Boolean).join(" · "); if(ev) parts.push("🏠 "+ev);
+  const ev=[p.tip.join(" / "),p.oda.join("/"),p.m2!==""?p.m2+" m²+":""].filter(Boolean).join(" · "); if(ev) parts.push("🏠 "+ev);
   const short=n=>n>=1e6?(Math.round(n/1e5)/10).toLocaleString("tr-TR")+" M":n>=1e3?Math.round(n/1e3).toLocaleString("tr-TR")+" B":String(n);
   if(p.bmin!==""||p.bmax!=="") parts.push("💰 "+(p.bmin!==""&&p.bmax!==""?short(p.bmin)+"–"+short(p.bmax):p.bmax!==""?"≤ "+short(p.bmax):"≥ "+short(p.bmin))+" "+(p.pb||"")+(p.esn&&p.esn!=="Sabit"?" ("+p.esn.toLocaleLowerCase("tr")+")":""));
   const fin=[p.oz,p.kredi?"kredi: "+p.kredi.toLocaleLowerCase("tr"):"",p.satip==="Evet"?"evini satıp alacak":""].filter(Boolean).join(" · "); if(fin) parts.push("🏦 "+fin);
@@ -1640,7 +1641,7 @@ function wireIh(){
     const key=g.dataset.ih, multi=!!g.dataset.multi;
     if(b.dataset.other){
       const inp=document.createElement("input"); inp.className="otherin"; inp.placeholder="Bölge yaz, Enter"; b.replaceWith(inp); inp.focus();
-      const done=()=>{ const v=inp.value.trim(); if(v && !S.ih[key].includes(v)) S.ih[key].push(v); renderIh(); };
+      let fin=false; const done=()=>{ if(fin) return; fin=true; const v=inp.value.trim(); if(v && !S.ih[key].includes(v)) S.ih[key].push(v); renderIh(); };
       inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); done(); } }); inp.addEventListener("blur",done); return;
     }
     const v=b.dataset.v;
@@ -1666,7 +1667,8 @@ function ihParse(text){
   else if(has(/yatirim/)) out.rol="Yatırımcı";
   else if(has(/ariyor|almak|alacak|bakiyor/)) out.rol="Alıcı";
   // tip
-  if(has(/\bvilla\b/)) out.tip="Villa"; else if(has(/mustakil/)) out.tip="Müstakil"; else if(has(/\barsa\b|\barazi\b/)) out.tip="Arsa"; else if(has(/\bofis\b/)) out.tip="Ofis"; else if(has(/dukkan|magaza|ticari/)) out.tip="Ticari"; else if(has(/\bdaire\b|\d\s*\+\s*\d/)) out.tip="Daire";
+  { const tp=[]; if(has(/\bdaire\b/)) tp.push("Daire"); if(has(/\bvilla\b/)) tp.push("Villa"); if(has(/mustakil/)) tp.push("Müstakil"); if(has(/\barsa\b|\barazi\b/)) tp.push("Arsa"); if(has(/\bofis\b/)) tp.push("Ofis"); if(has(/dukkan|magaza|ticari/)) tp.push("Ticari");
+    if(!tp.length && /\d\s*(\+|artı|arti)\s*\d/i.test(raw)) tp.push("Daire"); if(tp.length) out.tip=tp; }
   // oda (konuşma tanıma "3 artı 1" de yazabilir)
   const oda=new Set(); for(const m of raw.toLocaleLowerCase("tr").matchAll(/(\d)\s*(?:\+|artı|arti)\s*(\d)/g)) oda.add(m[1]+"+"+m[2]); if(oda.size) out.oda=[...oda];
   // m²
@@ -1745,7 +1747,7 @@ async function ihSave(name, tel, src){
   return true;
 }
 function saveIhCache(){ try{ localStorage.setItem("gc_ih", JSON.stringify(S.ihRows)); }catch(_){} }
-function loadIhCache(){ try{ S.ihRows=JSON.parse(localStorage.getItem("gc_ih")||"[]")||[]; }catch(_){ S.ihRows=[]; } }
+function loadIhCache(){ try{ S.ihRows=JSON.parse(localStorage.getItem("gc_ih")||"[]")||[]; S.ihRows.forEach(r=>{ if(r.p && !Array.isArray(r.p.tip)) r.p.tip=ihList(r.p.tip); }); }catch(_){ S.ihRows=[]; } }
 
 // ================= Portföy · Eşleştirme · Portal arama =================
 // Portföyler CRM dosyasında "🏠 Portföy" sayfasında (tablo Portfoy). Eşleştirme 25/25/15/15/10/10 (Gültekin, 28.10.2026).
@@ -1808,7 +1810,7 @@ function matchScore(p, f){
   else if(price<=max) but=(min===""||price>=min)?100:80;
   else if(price<=max*(1+(ESN_P[p.esn]||0))) but=60;
   else but=0;
-  const tip=(!p.tip||!f.tip)?50:(p.tip===f.tip?100:0);
+  const tip=(!p.tip.length||!f.tip)?50:(p.tip.includes(f.tip)?100:0);
   let oda=50; const fr=roomN(f.oda);
   if(p.oda.length && fr!=null){ if(p.oda.includes(f.oda)) oda=100; else { const d=Math.min(...p.oda.map(roomN).filter(x=>x!=null).map(x=>Math.abs(x-fr))); oda=d===0?100:d===1?50:0; } }
   const m2=(p.m2===""||f.m2==="")?50:(f.m2>=p.m2?100:(f.m2>=0.9*p.m2?60:0));
@@ -1832,7 +1834,10 @@ function portfoliosFor(p){
 const slug=s=>norm(s).replace(/ /g,"-");
 function portalLinks(p){
   const op=p.it==="Kiralık"||p.rol==="Kiracı"?"kiralik":"satilik";
-  const T={Daire:"daire",Villa:"villa",Müstakil:"mustakil-ev",Arsa:"arsa",Ticari:"isyeri",Ofis:"isyeri"}[p.tip]||"daire";
+  const TM={Daire:"daire",Villa:"villa",Müstakil:"mustakil-ev",Arsa:"arsa",Ticari:"isyeri",Ofis:"isyeri"};
+  const tset=[...new Set(p.tip.map(t=>TM[t]).filter(Boolean))];
+  const konut=tset.length>1 && tset.every(t=>["daire","villa","mustakil-ev"].includes(t));
+  const T=tset.length===1?tset[0]:(konut||!tset.length)?"":tset[0];   // "" = tüm konut
   const tl=n=>n===""?"":Math.round(toTL(n,p.pb));
   // konumları ilçe bazında grupla; bilinmeyen konum → anahtar kelimeyle ara
   const groups=new Map();
@@ -1844,10 +1849,10 @@ function portalLinks(p){
     const kw=g.raw || (g.semt.length===1?g.semt[0]:""); if(kw) q.set("query_text",kw);
     const loc=g.il?"/"+slug(g.il)+"-"+slug(g.ilce):"";
     const lbl=g.ilce||g.raw;
-    out.push({site:"sahibinden", il:lbl, href:`https://www.sahibinden.com/${op}-${T}${loc}${q.toString()?"?"+q:""}`});
+    out.push({site:"sahibinden", il:lbl, href:`https://www.sahibinden.com/${op}${T?"-"+T:""}${loc}${q.toString()?"?"+q:""}`});
     if(g.il){
-      out.push({site:"HepsiEmlak", il:lbl, href:`https://www.hepsiemlak.com/${slug(g.ilce)}-${op}/${T}`});
-      out.push({site:"Emlakjet", il:lbl, href:`https://www.emlakjet.com/${op}-${T}${loc}`});
+      out.push({site:"HepsiEmlak", il:lbl, href:`https://www.hepsiemlak.com/${slug(g.ilce)}-${op}${T?"/"+T:""}`});
+      out.push({site:"Emlakjet", il:lbl, href:`https://www.emlakjet.com/${op}-${T||"konut"}${loc}`});
     }
   }
   return out;
@@ -1963,7 +1968,7 @@ function wirePf(){
     const b=e.target.closest(".chip"), g=e.target.closest("[data-pfk]"); if(!b||!g) return;
     pfRead(); const key=g.dataset.pfk, d=S.pfEd;
     if(b.dataset.other){ const inp=document.createElement("input"); inp.className="otherin"; inp.placeholder="Bölge yaz, Enter"; b.replaceWith(inp); inp.focus();
-      const done=()=>{ const v=inp.value.trim(); if(v) d.bolge=v; renderPfForm(); }; inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); done(); } }); inp.addEventListener("blur",done); return; }
+      let fin=false; const done=()=>{ if(fin) return; fin=true; const v=inp.value.trim(); if(v) d.bolge=v; renderPfForm(); }; inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); done(); } }); inp.addEventListener("blur",done); return; }
     const v=b.dataset.v;
     if(g.dataset.multi){ const i=d[key].indexOf(v); if(i>=0) d[key].splice(i,1); else d[key].push(v); } else d[key]=d[key]===v&&key!=="durum"&&key!=="it"&&key!=="pb"?"":v;
     renderPfForm();
