@@ -438,6 +438,7 @@ function clearForm(keepName){
   S.ct=""; S.kt=""; S.p=""; $("kN").checked=false;
   $("fTitle").textContent="Yeni kişi"; $("fMeta").textContent="Bilgileri gir, dokunuş planını ve özel günleri seç (hazır önerildi), sonra kaydet. Doğum günü gibi tarihli günleri kayıttan sonra açılan \"Önemli günler\"den eklersin.";
   $("histBox").innerHTML=""; $("ogBox").innerHTML=""; $("docBox").innerHTML=""; $("rehSug").innerHTML=""; $("rehSug").hidden=true; S.pendingPhoto=null; $("dupWarn").classList.add("hidden");
+  S.ih=ihEmpty(); S.ihOrig=null; S.ihSrc=""; S.ihFilled=false; S.ihOpen=false; renderIh();
   buildChips(); renderResults();
 }
 function selectContact(key, focusNote=true){
@@ -452,6 +453,7 @@ function selectContact(key, focusNote=true){
   $("dupWarn").classList.add("hidden");
   $("rehSug").innerHTML=""; $("rehSug").hidden=true;
   renderHist(); renderOg(); renderDocs(); buildChips(); renderResults();
+  S.ihFilled=false; ihLoadFor(c.name, c.t);
   document.body.classList.add("editing");
   if(focusNote) setTimeout(()=>$("no").focus({preventScroll:true}),50);
 }
@@ -567,6 +569,7 @@ async function save(e){
   if(!no && cur && tfNow!==(cur.tf||"")){            // only the plan changed: log it, keep the pending follow-up
     const t=parseTf(tfNow); no="Dokunuş planı: "+(tfNow?[t.plan?planLabel(t.plan):"", t.sd.length?"özel günler: "+t.sd.join(", "):""].filter(Boolean).join(" · "):"kaldırıldı"); carry=cur.last||{};
   }
+  if(!no && ihChanged()) no="İhtiyaç profili güncellendi";
   if(!no){ $("no").focus(); toast("Görüşme notu gerekli"); return; }
   const rec={d:$("d").value||todayISO(), by:"Gültekin", ct:S.ct, n, kt:S.kt, t:joinTel($("t").value,$("t2").value), em:$("em").value.trim(), ad:$("ad").value.trim(), pb:$("pb").value.trim(), rf:$("rf").value.trim(), no, k:$("kN").checked?"N":"Y", tf:$("tf").value.trim(), p:S.p, nd:$("nd").value, na:$("na").value.trim()};
   if(carry){ if(!rec.nd && carry.nd) rec.nd=carry.nd; if(!rec.na && carry.na) rec.na=carry.na; if(!S.ct) rec.ct="Plan"; }
@@ -576,7 +579,10 @@ async function save(e){
     const key=norm(n);
     toast("Kaydedildi");
     if(S.pendingPhoto) afterSavePhoto(n);
+    const ihSrcNow=V.used?"Ses notu":S.ihFilled?"Not":"Seçenek";
     vAfterSave(n);
+    try{ if(await ihSave(n, rec.t, ihSrcNow)) toast("Kaydedildi · ihtiyaç profili güncellendi"); }
+    catch(e2){ console.error(e2); if(e2 && e2.code==="redirect") return; banner(errMsg(e2,"İhtiyaç profili kaydedilemedi (görüşme kaydedildi)")); }
     $("q").value=""; selectContact(key,false); setVal("no",""); setVal("na",""); setVal("nd","");
   }catch(err){
     console.error(err); if(err && err.code==="redirect") return;
@@ -1409,6 +1415,257 @@ function showView(v){
   window.scrollTo(0,0);
 }
 
+// ================= İhtiyaç profili (Beş Bilgi Grubu · EKM eğitimi) =================
+// Görüşme formunda seçeneklerle işaretlenir; sesli/yazılı nottan "Nottan doldur" ile otomatik ön-doldurulur.
+// Veri: CRM dosyasında "🧭 İhtiyaç Profili" sayfası (tablo Ihtiyac) · değişiklikler "🕓 Profil Değişiklikleri" (tablo ProfilDegisiklik).
+const IH_SHEET="🧭 İhtiyaç Profili", IH_TABLE="Ihtiyac";
+const IH_HEAD=["Contact name","Telephone","Güncelleme","Kaynak","Rol","İşlem türü","Bölge","Alternatif bölge","Tip","Oda","Min m²","Min bütçe","Max bütçe","Para birimi","Esneklik","Öz kaynak","Kredi","Satıp alacak","İşlem zamanı","Olmazsa olmaz","Olsa iyi olur","İstenmeyen","Teyit edilecek","Tamlık %"];
+const IL_SHEET="🕓 Profil Değişiklikleri", IL_TABLE="ProfilDegisiklik";
+const IL_HEAD=["Tarih","Contact name","Telephone","Alan","Eski değer","Yeni değer","Kaynak"];
+const IH_OPT={
+  rol:["Alıcı","Satıcı","Kiracı","Ev sahibi","Yatırımcı"],
+  it:["Satılık","Kiralık"],
+  bolge:["Çankaya","Oran","Gölbaşı","İncek","Çayyolu","Ümitköy","Yaşamkent","Konutkent","Bilkent","Beytepe","Dodurga","Alacaatlı","Bağlıca","Kızılcaşar","Etimesgut","Yenimahalle","Kavaklıdere","Gaziosmanpaşa","Çukurambar","Balgat","Dikmen","Keçiören"],
+  tip:["Daire","Villa","Müstakil","Arsa","Ticari","Ofis"],
+  oda:["1+1","2+1","3+1","4+1","5+1","6+1"],
+  pb:["TL","USD","EUR"],
+  esn:["Sabit","%10'a kadar","Uygun ev olursa artar"],
+  oz:["Tamamı nakit","%50'den fazla","%50'den az","Bilmiyor"],
+  kredi:["Evet","Hayır","Henüz bilmiyor"],
+  satip:["Evet","Hayır"],
+  zaman:["Hemen","1–3 ay","3–6 ay","6 ay+","Sadece bakıyor"],
+};
+const IH_FEAT=["Site içi","Asansör","Kapalı otopark","Ebeveyn banyosu","Kapalı mutfak","Sosyal donatı","Okula yakın","Giriş kat","Manzara","Bahçe","Havuz","Güvenlik"];
+const IH_FKEY={ "Site içi":["site ici","site icinde","sitede"], "Asansör":["asansor"], "Kapalı otopark":["kapali otopark","otopark","garaj"], "Ebeveyn banyosu":["ebeveyn banyo"], "Kapalı mutfak":["kapali mutfak"], "Sosyal donatı":["sosyal donati","sosyal alan"], "Okula yakın":["okula yakin","okul"], "Giriş kat":["giris kat","bahce kati","zemin kat"], "Manzara":["manzara"], "Bahçe":["bahce"], "Havuz":["havuz"], "Güvenlik":["guvenlik"] };
+const IH_FST=["","Olmazsa olmaz","Olsa iyi olur","İstemem"];      // tıklama sırası
+const IH_KEYS=[["rol","Rol"],["it","İşlem türü"],["bolge","Bölge"],["tip","Tip"],["oda","Oda"],["bmax","Bütçe"],["pb","Para birimi"],["oz","Öz kaynak"],["kredi","Kredi"],["zaman","İşlem zamanı"]];
+S.ih={}; S.ihOrig=null; S.ihRows=[]; S.ihMissing=false; S.ihSrc="";
+
+function ihEmpty(){ return {rol:"",it:"",bolge:[],alt:"",tip:"",oda:[],m2:"",bmin:"",bmax:"",pb:"",esn:"",oz:"",kredi:"",satip:"",zaman:"",feat:{},teyit:""}; }
+const ihList=v=>String(v||"").split(/\s*[,;]\s*/).map(x=>x.trim()).filter(Boolean);
+function ihNum(v){
+  if(typeof v==="number") return isFinite(v)?v:"";
+  let s=String(v||"").toLocaleLowerCase("tr").replace(/\s+/g," ").trim(); if(!s) return "";
+  let mul=1; if(/milyon|\bm\b|mn/.test(s)) mul=1e6; else if(/\bbin\b|\bk\b/.test(s)) mul=1e3;
+  s=s.replace(/[^\d.,]/g,"");
+  if(/^\d{1,3}([.,]\d{3})+$/.test(s)) s=s.replace(/[.,]/g,""); else s=s.replace(",",".");
+  const n=parseFloat(s); return isFinite(n)?Math.round(n*mul):"";
+}
+const ihFmt=n=>n===""||n==null?"":Number(n).toLocaleString("tr-TR");
+function ihFromRow(c,ix){
+  const g=h=>{ const v=c[ix(h)]; return v==null?"":v; };
+  const p=ihEmpty();
+  p.rol=String(g("Rol")); p.it=String(g("İşlem türü")); p.bolge=ihList(g("Bölge")); p.alt=String(g("Alternatif bölge")); p.tip=String(g("Tip")); p.oda=ihList(g("Oda"));
+  p.m2=ihNum(g("Min m²")); p.bmin=ihNum(g("Min bütçe")); p.bmax=ihNum(g("Max bütçe")); p.pb=String(g("Para birimi")); p.esn=String(g("Esneklik"));
+  p.oz=String(g("Öz kaynak")); p.kredi=String(g("Kredi")); p.satip=String(g("Satıp alacak")); p.zaman=String(g("İşlem zamanı")); p.teyit=String(g("Teyit edilecek"));
+  for(const [h,st] of [["Olmazsa olmaz","Olmazsa olmaz"],["Olsa iyi olur","Olsa iyi olur"],["İstenmeyen","İstemem"]]) for(const f of ihList(g(h))) p.feat[f]=st;
+  return p;
+}
+function ihFlat(p){       // karşılaştırma ve yazma için alan → metin
+  const fl=st=>IH_FEAT.concat(Object.keys(p.feat).filter(f=>!IH_FEAT.includes(f))).filter(f=>p.feat[f]===st).join(", ");
+  return {"Rol":p.rol,"İşlem türü":p.it,"Bölge":p.bolge.join(", "),"Alternatif bölge":p.alt,"Tip":p.tip,"Oda":p.oda.join(", "),"Min m²":p.m2===""?"":String(p.m2),
+    "Min bütçe":p.bmin===""?"":String(p.bmin),"Max bütçe":p.bmax===""?"":String(p.bmax),"Para birimi":p.pb,"Esneklik":p.esn,"Öz kaynak":p.oz,"Kredi":p.kredi,"Satıp alacak":p.satip,
+    "İşlem zamanı":p.zaman,"Olmazsa olmaz":fl("Olmazsa olmaz"),"Olsa iyi olur":fl("Olsa iyi olur"),"İstenmeyen":fl("İstemem"),"Teyit edilecek":p.teyit};
+}
+function ihHasData(p){ return Object.values(ihFlat(p)).some(v=>String(v).trim()); }
+function ihMissingList(p){ return IH_KEYS.filter(([k])=>{ const v=p[k]; return Array.isArray(v)?!v.length:(v===""||v==null); }).map(([,l])=>l); }
+function ihScore(p){ return (IH_KEYS.length-ihMissingList(p).length)/IH_KEYS.length; }
+
+async function loadIh(){
+  try{
+    const r=await graph(`${WB}/tables('${IH_TABLE}')/range?$select=values`);
+    const head=r.values[0].map(h=>String(h).trim()), ix=h=>head.indexOf(h);
+    S.ihRows=r.values.slice(1).map((c,i)=>({i, n:String(c[ix("Contact name")]??"").trim(), t:String(c[ix("Telephone")]??""), p:ihFromRow(c,ix)})).filter(x=>x.n);
+    S.ihMissing=false;
+  }catch(e){ if(e && e.code==="http_404"){ S.ihRows=[]; S.ihMissing=true; } else throw e; }
+}
+async function ensureTable(sheet, table, head){
+  try{ await graph(`${WB}/tables('${table}')?$select=name`); return; }catch(e){ if(!(e && e.code==="http_404")) throw e; }
+  try{ await graph(`${WB}/worksheets/add`,{method:"POST",body:{name:sheet}}); }catch(e){ if(e && e.code==="redirect") throw e; }
+  const end=colLetter(head.length);
+  await graph(`${wsPath(sheet)}/range(address='A1:${end}1')`,{method:"PATCH",body:{values:[head]}});
+  const tb=await graph(`${wsPath(sheet)}/tables/add`,{method:"POST",body:{address:`A1:${end}1`,hasHeaders:true}});
+  await graph(`${WB}/tables/${encodeURIComponent(tb.id||tb.name)}`,{method:"PATCH",body:{name:table}});
+}
+function colLetter(n){ let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+function ihFind(name, tel){
+  const pk=phoneKey(tel), nk=norm(name);
+  return S.ihRows.find(x=>pk && phoneKey(x.t)===pk) || S.ihRows.find(x=>norm(x.n)===nk) || null;
+}
+
+// ---------- UI ----------
+function ihReadInputs(){
+  const p=S.ih; if(!$("ih_alt")) return p;
+  p.alt=$("ih_alt").value.trim(); p.m2=ihNum($("ih_m2").value); p.bmin=ihNum($("ih_bmin").value); p.bmax=ihNum($("ih_bmax").value); p.teyit=$("ih_teyit").value.trim();
+  return p;
+}
+function ihChips(key, multi){
+  const cur=S.ih[key], list=[...IH_OPT[key]];
+  const sel=v=>multi?cur.includes(v):cur===v;
+  if(multi) cur.forEach(v=>{ if(!list.includes(v)) list.push(v); }); else if(cur && !list.includes(cur)) list.push(cur);
+  return `<div class="chips" data-ih="${key}"${multi?' data-multi="1"':""}>${list.map(v=>`<button type="button" class="chip" aria-pressed="${sel(v)}" data-v="${esc(v)}">${esc(v)}</button>`).join("")}${key==="bolge"?`<button type="button" class="chip add" data-other="1">Diğer…</button>`:""}</div>`;
+}
+function ihFeatChips(){
+  const cls={"Olmazsa olmaz":"must","Olsa iyi olur":"nice","İstemem":"no"};
+  const all=IH_FEAT.concat(Object.keys(S.ih.feat).filter(f=>!IH_FEAT.includes(f)));
+  return `<div class="chips" id="ihFeat">${all.map(f=>{ const st=S.ih.feat[f]||""; return `<button type="button" class="chip feat ${cls[st]||""}" data-f="${esc(f)}" aria-label="${esc(f)}: ${st||"seçili değil"}">${st==="Olmazsa olmaz"?"✓✓ ":st==="Olsa iyi olur"?"✓ ":st==="İstemem"?"✕ ":""}${esc(f)}</button>`; }).join("")}</div>`;
+}
+function renderIh(){
+  const box=$("ihBox"); if(!box) return;
+  const p=S.ih, open=box.querySelector("details")?box.querySelector("details").open:S.ihOpen;
+  const miss=ihMissingList(p), sc=Math.round(ihScore(p)*100);
+  box.innerHTML=`<details class="sec ihsec"${open?" open":""}><summary>🧭 İhtiyaç — ne arıyor? <span class="cnt ihpct ${sc>=80?"ok":sc>=50?"mid":"low"}">%${sc}</span></summary>
+    <div class="ihbar"><button type="button" class="act ok" id="ihFill">✨ Nottan doldur</button><span class="hint" id="ihSrcLbl">${S.ihSrc?esc(S.ihSrc):"Görüşme notundaki bilgileri seçeneklere işler; sadece boş alanları doldurur."}</span></div>
+    <div class="f"><span class="lab">Rol</span>${ihChips("rol")}</div>
+    <div class="f"><span class="lab">İşlem</span>${ihChips("it")}</div>
+    <div class="f"><span class="lab">Bölge (birden fazla)</span>${ihChips("bolge",true)}</div>
+    <div class="f"><label for="ih_alt">Alternatif bölge</label><input id="ih_alt" value="${esc(p.alt)}" placeholder="Olabilir dediği bölge"></div>
+    <div class="f"><span class="lab">Tip</span>${ihChips("tip")}</div>
+    <div class="f"><span class="lab">Oda (birden fazla)</span>${ihChips("oda",true)}</div>
+    <div class="row">
+      <div class="f"><label for="ih_bmin">Min bütçe / fiyat</label><input id="ih_bmin" inputmode="decimal" value="${esc(ihFmt(p.bmin))}" placeholder="12 milyon"></div>
+      <div class="f"><label for="ih_bmax">Max bütçe / fiyat</label><input id="ih_bmax" inputmode="decimal" value="${esc(ihFmt(p.bmax))}" placeholder="15 milyon"></div>
+    </div>
+    <div class="f"><span class="lab">Para birimi</span>${ihChips("pb")}</div>
+    <div class="f"><span class="lab">Bütçe esnekliği</span>${ihChips("esn")}</div>
+    <div class="f"><label for="ih_m2">Min m²</label><input id="ih_m2" inputmode="numeric" value="${esc(p.m2===""?"":String(p.m2))}"></div>
+    <div class="f"><span class="lab">Öz kaynak</span>${ihChips("oz")}</div>
+    <div class="f"><span class="lab">Kredi</span>${ihChips("kredi")}</div>
+    <div class="f"><span class="lab">Mevcut evini satıp mı alacak?</span>${ihChips("satip")}</div>
+    <div class="f"><span class="lab">Ne zaman?</span>${ihChips("zaman")}</div>
+    <div class="f"><span class="lab">Tercihler <span class="hint" style="margin:0">— her dokunuş: ✓✓ olmazsa olmaz → ✓ olsa iyi olur → ✕ istemem → boş</span></span>${ihFeatChips()}</div>
+    <div class="f"><label for="ih_teyit">Teyit edilecek</label><input id="ih_teyit" value="${esc(p.teyit)}" placeholder="Emin olmadıkların: 'galiba kredi', 'bayramdan sonra'…"></div>
+    <p class="hint ihmiss">${miss.length?"Eksik: "+esc(miss.join(", ")):"Profil tam ✓"}</p>
+  </details>`;
+}
+function ihRefreshHead(){
+  const p=ihReadInputs(), sc=Math.round(ihScore(p)*100), miss=ihMissingList(p);
+  const pc=document.querySelector("#ihBox .ihpct"); if(pc){ pc.textContent="%"+sc; pc.className="cnt ihpct "+(sc>=80?"ok":sc>=50?"mid":"low"); }
+  const m=document.querySelector("#ihBox .ihmiss"); if(m) m.textContent=miss.length?"Eksik: "+miss.join(", "):"Profil tam ✓";
+}
+function ihLoadFor(name, tel){
+  const hit=ihFind(name, tel);
+  S.ih=hit?JSON.parse(JSON.stringify(hit.p)):ihEmpty(); S.ihOrig=hit?JSON.parse(JSON.stringify(hit.p)):null; S.ihSrc="";
+  if(!S.ih.rol){ const kt=norm(S.kt); if(kt==="alici") S.ih.rol="Alıcı"; else if(kt==="satici") S.ih.rol="Satıcı"; }
+  S.ihOpen=!!hit; renderIh();
+}
+function wireIh(){
+  const box=$("ihBox"); if(!box) return;
+  box.addEventListener("click",e=>{
+    if(e.target.id==="ihFill"){ ihFillFromNote(); return; }
+    const fb=e.target.closest(".chip.feat");
+    if(fb){ ihReadInputs(); const f=fb.dataset.f, cur=S.ih.feat[f]||""; const nx=IH_FST[(IH_FST.indexOf(cur)+1)%IH_FST.length]; if(nx) S.ih.feat[f]=nx; else delete S.ih.feat[f]; renderIh(); return; }
+    const b=e.target.closest(".chip"); const g=e.target.closest("[data-ih]"); if(!b||!g) return;
+    ihReadInputs();
+    const key=g.dataset.ih, multi=!!g.dataset.multi;
+    if(b.dataset.other){
+      const inp=document.createElement("input"); inp.className="otherin"; inp.placeholder="Bölge yaz, Enter"; b.replaceWith(inp); inp.focus();
+      const done=()=>{ const v=inp.value.trim(); if(v && !S.ih[key].includes(v)) S.ih[key].push(v); renderIh(); };
+      inp.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); done(); } }); inp.addEventListener("blur",done); return;
+    }
+    const v=b.dataset.v;
+    if(multi){ const a=S.ih[key]; const i=a.indexOf(v); if(i>=0) a.splice(i,1); else a.push(v); }
+    else S.ih[key]=S.ih[key]===v?"":v;
+    renderIh();
+  });
+  box.addEventListener("input",()=>ihRefreshHead());
+  box.addEventListener("change",e=>{ if(["ih_bmin","ih_bmax"].includes(e.target.id)){ const n=ihNum(e.target.value); if(n!=="") e.target.value=ihFmt(n); ihRefreshHead(); } });
+  box.addEventListener("toggle",e=>{ if(e.target.matches(".ihsec")) S.ihOpen=e.target.open; },true);
+}
+
+// ---------- Nottan doldur (kural tabanlı; sadece boş alanları doldurur) ----------
+function ihParse(text){
+  const out={feat:{}, teyit:[]}; const raw=String(text||""); const n=norm(raw); if(!n) return out;
+  const has=re=>re.test(n);
+  // bölge
+  const bol=IH_OPT.bolge.filter(b=>new RegExp("\\b"+norm(b)+"\\b").test(n)); if(bol.length) out.bolge=bol;
+  // işlem / rol
+  if(has(/\bkiralik\b|\bkira(da|ya)?\b|kiralamak/)) out.it="Kiralık"; else if(has(/satilik|satin al|almak|alacak|\bev ariyor|daire ariyor|villa ariyor/)) out.it="Satılık";
+  if(has(/satmak ist|satacak|satiyor|satisa cikar|evini satmak/) && !has(/satip al/)) out.rol="Satıcı";
+  else if(out.it==="Kiralık" && has(/ariyor|kiralamak|tutmak/)) out.rol="Kiracı";
+  else if(has(/yatirim/)) out.rol="Yatırımcı";
+  else if(has(/ariyor|almak|alacak|bakiyor/)) out.rol="Alıcı";
+  // tip
+  if(has(/\bvilla\b/)) out.tip="Villa"; else if(has(/mustakil/)) out.tip="Müstakil"; else if(has(/\barsa\b|\barazi\b/)) out.tip="Arsa"; else if(has(/\bofis\b/)) out.tip="Ofis"; else if(has(/dukkan|magaza|ticari/)) out.tip="Ticari"; else if(has(/\bdaire\b|\d\s*\+\s*\d/)) out.tip="Daire";
+  // oda (konuşma tanıma "3 artı 1" de yazabilir)
+  const oda=new Set(); for(const m of raw.toLocaleLowerCase("tr").matchAll(/(\d)\s*(?:\+|artı|arti)\s*(\d)/g)) oda.add(m[1]+"+"+m[2]); if(oda.size) out.oda=[...oda];
+  // m²
+  const mm=n.match(/(\d{2,4})\s*(m2|metrekare|metre kare|metre)\b/); if(mm) out.m2=Number(mm[1]);
+  // para birimi
+  if(has(/dolar|\busd\b/) || /\$/.test(raw)) out.pb="USD"; else if(has(/\beuro\b|\beur\b|avro/) || /€/.test(raw)) out.pb="EUR"; else if(has(/\btl\b|lira|milyon|bin\b/)) out.pb="TL";
+  // bütçe: "12-15 milyon", "12 ile 15 milyon", "15 milyona kadar", "300 bin dolar"
+  const L=raw.toLocaleLowerCase("tr").replace(/(\d)\.(\d{3})/g,"$1$2");
+  const unit=u=>/milyon|\bm\b/.test(u||"")?1e6:/bin/.test(u||"")?1e3:1;
+  let mr=L.match(/(\d+(?:[.,]\d+)?)\s*(milyon|bin)?\s*(?:-|–|ile|ila|\/|veya|ya da)\s*(\d+(?:[.,]\d+)?)\s*(milyon|bin|m\b)/);
+  if(mr){ const u2=unit(mr[4]), u1=mr[2]?unit(mr[2]):u2; out.bmin=Math.round(parseFloat(mr[1].replace(",","."))*u1); out.bmax=Math.round(parseFloat(mr[3].replace(",","."))*u2); }
+  else if((mr=L.match(/(\d+(?:[.,]\d+)?)\s*(milyon|bin)\s*(?:a|e|ya|ye)?\s*(kadar|maksimum|max|üst)/))) out.bmax=Math.round(parseFloat(mr[1].replace(",","."))*unit(mr[2]));
+  else if((mr=L.match(/(\d+(?:[.,]\d+)?)\s*(milyon|bin)/))) { const v=Math.round(parseFloat(mr[1].replace(",","."))*unit(mr[2])); out.bmax=v; if(has(/civar/)) out.teyit.push("Bütçe aralığı ('"+mr[0].trim()+" civarı')"); }
+  if(has(/guzel olursa|uygun olursa|biraz daha cik|esnek|zorlayabilir/)) out.esn="Uygun ev olursa artar"; else if(has(/kesinlikle ustune|bir kurus fazla|sabit butce/)) out.esn="Sabit";
+  // finansman
+  if(has(/galiba kredi|belki kredi|kredi dusun|kredi kullanabilir/)){ out.kredi="Henüz bilmiyor"; out.teyit.push("Kredi kullanacak mı"); }
+  else if(has(/kredisiz|kredi yok|kredi kullanmay|kredi istemiyor/)) out.kredi="Hayır";
+  else if(has(/kredi/)) out.kredi="Evet";
+  if(has(/nakit|pesin/)){ out.oz="Tamamı nakit"; if(!out.kredi) out.kredi="Hayır"; }
+  if(has(/satip al|evini satip|mevcut evini sat|evini sattiktan|evini satinca/)) out.satip="Evet";
+  // zaman
+  if(has(/\bhemen\b|\bacil\b|bu ay icinde|bir an once/)) out.zaman="Hemen";
+  else if(has(/sadece bakiyor|acelesi yok|piyasaya bakiyor|fikir almak/)) out.zaman="Sadece bakıyor";
+  else { const za=n.match(/(\d+)\s*ay/); if(za){ const k=Number(za[1]); out.zaman=k<=3?"1–3 ay":k<=6?"3–6 ay":"6 ay+"; } }
+  for(const w of ["bayramdan sonra","bayram sonrasi","yilbasindan sonra","yazin","okullar kapaninca","okullar acilmadan"]) if(n.includes(w)) out.teyit.push("Zaman: '"+w+"'");
+  // tercihler: aynı cümle içinde olumsuz / zorunlu ifade
+  const clauses=raw.split(/[.;\n!?]|,\s*(?=[^\d])/).map(norm).filter(Boolean);
+  for(const f of IH_FEAT){
+    for(const c of clauses){
+      if(!IH_FKEY[f].some(k=>c.includes(k))) continue;
+      if(/istemiyor|olmasin|istemez|olmamali|sevmiyor|haric|\byok\b/.test(c) && !(f==="Kapalı otopark" && /otopark yok mu/.test(c))) out.feat[f]="İstemem";
+      else if(/olmazsa olmaz|sart|kesin|mutlaka|kesinlikle|onemli/.test(c)) out.feat[f]="Olmazsa olmaz";
+      else if(/onemsiz|fark etmez|farketmez/.test(c)) {}
+      else out.feat[f]=out.feat[f]||"Olsa iyi olur";
+      break;
+    }
+  }
+  return out;
+}
+function ihFillFromNote(){
+  const txt=$("no").value.trim(); if(!txt){ toast("Önce görüşme notunu yaz ya da sesli anlat"); $("no").focus(); return; }
+  ihReadInputs(); const p=S.ih, x=ihParse(txt); let k=0;
+  const set=(key)=>{ if(x[key]===undefined) return; const cur=p[key]; const empty=Array.isArray(cur)?!cur.length:(cur===""||cur==null); if(empty){ p[key]=Array.isArray(x[key])?[...x[key]]:x[key]; k++; } };
+  ["rol","it","bolge","tip","oda","m2","bmin","bmax","pb","esn","oz","kredi","satip","zaman"].forEach(set);
+  for(const [f,st] of Object.entries(x.feat)) if(!p.feat[f]){ p.feat[f]=st; k++; }
+  if(x.teyit.length){ const add=x.teyit.filter(t=>!p.teyit.includes(t)); if(add.length){ p.teyit=[p.teyit,...add].filter(Boolean).join("; "); k++; } }
+  S.ihSrc=k?`Nottan ${k} alan dolduruldu — kontrol et, gerekirse düzelt.`:"Notta seçeneklere çevrilecek yeni bilgi bulunamadı.";
+  S.ihOpen=true; renderIh(); toast(k?`${k} alan nottan dolduruldu`:"Yeni bilgi bulunamadı");
+  if(k) S.ihFilled=true;
+}
+
+// ---------- kaydet ----------
+function ihChanged(){ ihReadInputs(); const a=ihFlat(S.ih), b=S.ihOrig?ihFlat(S.ihOrig):ihFlat(ihEmpty()); return Object.keys(a).some(k=>String(a[k])!==String(b[k])); }
+async function ihSave(name, tel, src){
+  ihReadInputs();
+  if(!ihHasData(S.ih) || !ihChanged()) return false;
+  await loadIh(); await ensureTable(IH_SHEET, IH_TABLE, IH_HEAD); if(S.ihMissing) await loadIh();
+  const flat=ihFlat(S.ih), now=serial(todayISO());
+  const row=IH_HEAD.map(h=>h==="Contact name"?name:h==="Telephone"?cellIn(tel||""):h==="Güncelleme"?now:h==="Kaynak"?src:h==="Tamlık %"?Math.round(ihScore(S.ih)*100)/100:
+    (["Min m²","Min bütçe","Max bütçe"].includes(h)?(flat[h]===""?"":Number(flat[h])):cellIn(flat[h])));
+  const hit=ihFind(name, tel);
+  if(hit){
+    await graph(`${WB}/tables('${IH_TABLE}')/rows/itemAt(index=${hit.i})`,{method:"PATCH",body:{values:[row]}});
+    const old=ihFlat(hit.p), ch=Object.keys(flat).filter(k=>String(old[k]||"")!==String(flat[k]||"") && String(old[k]||"").trim());
+    if(ch.length){
+      try{
+        await ensureTable(IL_SHEET, IL_TABLE, IL_HEAD);
+        await graph(`${WB}/tables('${IL_TABLE}')/rows/add`,{method:"POST",body:{values:ch.map(k=>{ const f=v=>["Min bütçe","Max bütçe","Min m²"].includes(k)&&v!==""?ihFmt(Number(v)):v; return [now, name, cellIn(tel||""), k, cellIn(f(old[k])), cellIn(f(flat[k])), src]; })}});
+      }catch(e){ console.error(e); if(e && e.code==="redirect") throw e; }
+    }
+  } else {
+    await graph(`${WB}/tables('${IH_TABLE}')/rows/add`,{method:"POST",body:{values:[row]}});
+  }
+  await loadIh(); saveIhCache();
+  return true;
+}
+function saveIhCache(){ try{ localStorage.setItem("gc_ih", JSON.stringify(S.ihRows)); }catch(_){} }
+function loadIhCache(){ try{ S.ihRows=JSON.parse(localStorage.getItem("gc_ih")||"[]")||[]; }catch(_){ S.ihRows=[]; } }
+
 // ================= Sesli not (konuşma → yazı + ses kaydı OneDrive'a) =================
 // Mikrofona bas: Türkçe konuşma canlı olarak "Görüşme notu"na yazılır, aynı anda ses kaydı tutulur.
 // Kaydet'e basınca ses dosyası kişinin Dokümanlar klasörüne "Ses notu <tarih saat>" adıyla yüklenir.
@@ -1429,10 +1686,9 @@ function vUi(){
   b.innerHTML=V.on?`⏹ Durdur <span id="vClock">${vClock(Date.now()-V.t0)}</span>`:"🎙 Sesli not";
   b.setAttribute("aria-pressed",V.on?"true":"false");
   $("vKeepWrap").hidden=!V.blob;
-  $("vProf").hidden=!$("no").value.trim();
   const st=$("vState");
   if(V.on) st.textContent=V.srOk?"Dinliyorum… konuştukça nota yazılıyor.":(V.srFail?"Ses kaydediliyor. Bu tarayıcı canlı yazıya çeviremiyor; notu klavyedeki 🎤 ile dikte edebilirsin.":"Mikrofon açılıyor…");
-  else if(V.blob) st.textContent=`Ses kaydı hazır (${vClock(V.dur||0)}, ${fmtSize(V.blob.size)}). Kaydet'e basınca OneDrive'a eklenir.`;
+  else if(V.blob) st.textContent=`Ses kaydı hazır (${vClock(V.dur||0)}, ${fmtSize(V.blob.size)}). Kaydet'e basınca OneDrive'a eklenir.${V.fin?" Notdaki bilgiler İhtiyaç seçeneklerine işlendi, kontrol et.":""}`;
   else st.textContent="";
 }
 function vWrite(interim){
@@ -1479,7 +1735,7 @@ async function vStart(){
     }catch(e){ console.warn(e); stream.getTracks().forEach(t=>t.stop()); V.rec=null; }
   }
   if(!V.rec && !SRClass){ banner("Bu tarayıcı ses kaydını desteklemiyor. Notu klavyedeki 🎤 ile dikte edebilirsin."); return; }
-  V.on=true; V.t0=Date.now();
+  V.on=true; V.t0=Date.now(); V.used=true;
   vStartSR();
   V.timer=setInterval(()=>{ const c=$("vClock"); if(c) c.textContent=vClock(Date.now()-V.t0); if(Date.now()-V.t0>VMAX_MS){ toast("10 dakika doldu, kayıt durduruldu"); vStop(); } },500);
   vUi();
@@ -1491,11 +1747,11 @@ function vStop(){
   if(V.srOk||V.fin) vWrite("");
   const p=new Promise(res=>{ if(V.rec && V.rec.state!=="inactive"){ V.stopWait=res; try{ V.rec.stop(); }catch(_){ res(); } } else res(); });
   vUi();
-  return p.then(()=>{ vUi(); });
+  return p.then(()=>{ vUi(); if(V.fin) ihFillFromNote(); });
 }
 function vReset(){
   if(V.on){ V.on=false; clearInterval(V.timer); const sr=V.sr; V.sr=null; if(sr){ try{ sr.abort(); }catch(_){ } } if(V.rec && V.rec.state!=="inactive"){ V.stopWait=null; try{ V.rec.stop(); }catch(_){ } } }
-  V.blob=null; V.chunks=[]; V.fin=""; V.base=""; V.dur=0;
+  V.blob=null; V.chunks=[]; V.fin=""; V.base=""; V.dur=0; V.used=false;
   if($("vKeep")) $("vKeep").checked=true;
   vUi();
 }
@@ -1510,27 +1766,10 @@ async function vAfterSave(name){
     toast("Ses notu OneDrive'a eklendi"); renderDocs();
   }catch(e){ console.error(e); if(e && e.code==="redirect") return; banner(errMsg(e,"Ses notu yüklenemedi (not kaydedildi)")); }
 }
-function vProfilePrompt(){
-  const n=$("n").value.trim()||"(ad yok)", note=$("no").value.trim(); if(!note){ toast("Önce not gerekli"); return; }
-  const c=S.sel?S.contacts.get(S.sel):null;
-  const ctx=c?`${c.recs.length+1}. görüşme · daha önce kayıtlı kişi`:"İlk görüşme · yeni kişi";
-  const txt=`Selin, bu görüşme notunu İhtiyaç Profili'ne çevir.
-Bağlam: ${n} · ${ctx} · ${$("d").value||todayISO()}${$("rf").value.trim()?" · Referans/portföy: "+$("rf").value.trim():""}
-Sınır: Söylenmeyen bilgiyi uydurma; bilmediğini boş bırak; emin olmadığını "Teyit edilecek"e yaz.
-Çıktı: Beş Bilgi Grubu'na göre Alan: değer listesi, ardından eksikler ve teyit edilecekler. Kayıtlı profil varsa eski–yeni farkını da yaz.
-
-Not:
-${note}`;
-  const done=()=>toast("Komut panoya kopyalandı · Selin'e yapıştır");
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,()=>vCopyFallback(txt,done)); else vCopyFallback(txt,done);
-}
-function vCopyFallback(txt,done){ const t=document.createElement("textarea"); t.value=txt; t.setAttribute("readonly",""); t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.select(); try{ document.execCommand("copy"); done(); }catch(_){ banner("Kopyalanamadı"); } t.remove(); }
 function wireVoice(){
   if(!$("vBtn")) return;
   if(!SRClass && !(window.MediaRecorder && navigator.mediaDevices)){ $("vBtn").disabled=true; $("vState").textContent="Bu tarayıcı sesli notu desteklemiyor; klavyedeki 🎤 ile dikte edebilirsin."; }
   $("vBtn").addEventListener("click",()=>{ V.on?vStop():vStart(); });
-  $("vProf").addEventListener("click",vProfilePrompt);
-  $("no").addEventListener("input",()=>{ if(!V.on) $("vProf").hidden=!$("no").value.trim(); });
   vUi();
 }
 
@@ -1564,7 +1803,7 @@ function wire(){
       }catch(e){ console.error(e); }
     });
   }
-  wireOg(); wireDocs(); wireVoice();
+  wireOg(); wireDocs(); wireVoice(); wireIh();
   $("tfChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; const t=parseTf($("tf").value); $("tf").value=formatTf(t.plan===b.dataset.v?"":b.dataset.v, t.sd); renderPlanChips(); });
   $("sdChips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b) return; S.sdTouched=true; const t=parseTf($("tf").value); const v=b.dataset.sd; const sd=t.sd.includes(v)?t.sd.filter(x=>x!==v):SD.map(d=>d.id).filter(x=>x===v||t.sd.includes(x)); $("tf").value=formatTf(t.plan, sd); renderPlanChips(); });
   $("photoFile").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; photoContact(f); });
@@ -1618,7 +1857,7 @@ const APP_V = (document.querySelector('script[src*="crm.js"]')||{src:""}).src.sp
 async function refresh(manual){
   $("syncLbl").textContent="Excel okunuyor…";
   try{
-    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat"), loadOg().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; })]);
+    await Promise.all([loadCrm(), loadMod("soz"), loadMod("kira"), loadMod("firsat"), loadOg().catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; }), loadIh().then(saveIhCache).catch(e=>{ console.error(e); if(e && e.code==="redirect") throw e; })]);
     S.modsLoaded=true;
     const busy=document.activeElement && ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName);
     rebuild(); if(!busy){ renderModList("soz"); renderModList("kira"); renderModList("firsat"); }
@@ -1651,7 +1890,7 @@ async function boot(){
   msalApp.setActiveAccount(S.account);
   $("signin").hidden=true; $("app").hidden=false;
   wire();
-  const had=loadCache();
+  const had=loadCache(); loadIhCache();
   if(had){ rebuild(); renderModList("soz"); renderModList("kira"); renderModList("firsat"); $("syncLbl").textContent="Excel okunuyor…"; }
   const qs=new URLSearchParams(location.search);
   let tab="k"; try{ tab=localStorage.getItem("gc_tab")||"k"; }catch(_){}

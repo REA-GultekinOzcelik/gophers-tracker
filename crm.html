@@ -102,6 +102,13 @@ fieldset{border:0;margin:0;padding:0}
 details.extra{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
 details.extra summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:14px}
 .f label.keep{display:flex;font-size:14px;font-weight:400;color:var(--mut);margin-top:8px}.f .keep input{width:auto;padding:0}
+.ihbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:2px 0 6px}.ihbar .hint{margin:0}
+.ihpct{margin-left:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.ihpct.ok{background:var(--green-soft);color:var(--green)}.ihpct.mid{background:var(--amber-soft);color:var(--amber)}.ihpct.low{background:var(--red-soft);color:var(--red)}
+.chip.feat.must{background:var(--green);border-color:var(--green);color:#fff}
+.chip.feat.nice{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+.chip.feat.no{background:var(--red-soft);border-color:var(--red);color:var(--red);text-decoration:line-through}
+.ihsec .f{margin-top:10px}.ihsec,.ihsec *{box-sizing:border-box}
 .vbar{display:flex;gap:8px;align-items:center;margin:2px 0 8px;flex-wrap:wrap}
 .vbtn{border:1.5px solid var(--navy);background:var(--navy-soft);color:var(--navy);border-radius:999px;padding:9px 16px;font-size:15px;font-weight:700;cursor:pointer;min-height:42px}
 .vbtn.rec{border-color:var(--red);background:var(--red-soft);color:var(--red);animation:vpulse 1.4s ease-in-out infinite}
@@ -264,11 +271,12 @@ pre.ocr{white-space:pre-wrap;font-size:12px;color:var(--mut);background:var(--pa
         <div class="f"><span class="lab">Özel günler (birden fazla seçebilirsin)</span><div class="chips" id="sdChips"></div><p class="hint" id="sdHint"></p></div>
         <div class="f"><label for="rf">Referans / portföy</label><input id="rf" list="rfList"><datalist id="rfList"></datalist></div>
         <div class="f"><label for="no">Görüşme notu</label>
-          <div class="vbar"><button type="button" class="vbtn" id="vBtn" aria-pressed="false">🎙 Sesli not</button><button type="button" class="act" id="vProf" hidden>🧭 Profile çevir</button></div>
+          <div class="vbar"><button type="button" class="vbtn" id="vBtn" aria-pressed="false">🎙 Sesli not</button></div>
           <textarea id="no" placeholder="Ne konuşuldu? (ya da 🎙 Sesli not'a bas ve anlat)"></textarea>
           <p class="hint" id="vState" aria-live="polite"></p>
           <label class="keep" id="vKeepWrap" hidden><input type="checkbox" id="vKeep" checked> Ses kaydını kişinin dokümanlarına ekle</label>
         </div>
+        <div id="ihBox"></div>
         <div class="f"><span class="lab">Potansiyel</span><div class="chips" id="pChips"></div></div>
 
         <div class="f"><span class="lab">Sonraki aksiyon tarihi</span>
@@ -343,6 +351,6 @@ pre.ocr{white-space:pre-wrap;font-size:12px;color:var(--mut);background:var(--pa
 </div>
 <script src="msal-browser.min.js"></script>
 <script src="config.js?v=202610182016"></script>
-<script src="crm.js?v=202610291200"></script>
+<script src="crm.js?v=202610291330"></script>
 </body>
 </html>
